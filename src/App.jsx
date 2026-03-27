@@ -1,4 +1,4 @@
-/* eslint-disable */ 
+/* eslint-disable */
 import { useState, useEffect, useRef, useCallback } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -441,6 +441,141 @@ export default function App() {
   const ds = generateDatasetStats();
   const waveSpeed = (2*Math.sqrt(D*r)).toFixed(4);
 
+  // ── Presets / scenarios / shareable URL ───────────────────────────────────
+  const DEFAULT_PARAMS = { D: 0.1, r: 2.0, mu: 0.3, sig: 0.1 };
+  const PRESETS = [
+    { id: "baseline", label: "Baseline", ...DEFAULT_PARAMS },
+    { id: "fast-front", label: "Fast front (high D,r)", D: 0.6, r: 4.5, mu: 0.25, sig: 0.10 },
+    { id: "slow-front", label: "Slow front (low D,r)", D: 0.03, r: 0.9, mu: 0.35, sig: 0.12 },
+    { id: "narrow-ic", label: "Narrow IC", D: 0.10, r: 2.2, mu: 0.50, sig: 0.05 },
+    { id: "wide-ic", label: "Wide IC", D: 0.10, r: 1.6, mu: 0.50, sig: 0.22 },
+  ];
+  const [presetId, setPresetId] = useState("baseline");
+  const [scenarios, setScenarios] = useState([]);
+  const [scenarioId, setScenarioId] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const applyParams = useCallback((p) => {
+    setD(clamp(+p.D, 0.01, 1.0));
+    setR(clamp(+p.r, 0.5, 5.0));
+    setMu(clamp(+p.mu, 0.1, 0.9));
+    setSig(clamp(+p.sig, 0.02, 0.3));
+  }, []);
+
+  const applyPreset = useCallback((id) => {
+    const p = PRESETS.find(x => x.id === id) || PRESETS[0];
+    setPresetId(p.id);
+    applyParams(p);
+  }, [PRESETS, applyParams]);
+
+  const randomize = useCallback(() => {
+    const p = {
+      D: 0.01 * 10 ** (Math.random() * 2),
+      r: 0.5 + Math.random() * 4.5,
+      mu: 0.1 + Math.random() * 0.8,
+      sig: 0.02 + Math.random() * 0.28,
+    };
+    setPresetId("baseline");
+    applyParams(p);
+  }, [applyParams]);
+
+  const resetParams = useCallback(() => {
+    setPresetId("baseline");
+    applyParams(DEFAULT_PARAMS);
+  }, [applyParams]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("fno_scenarios_v1");
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr)) setScenarios(arr);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem("fno_scenarios_v1", JSON.stringify(scenarios)); } catch {}
+  }, [scenarios]);
+
+  const saveScenario = useCallback(() => {
+    const now = new Date();
+    const name = `Case ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+    const item = { id: String(Date.now()), name, D, r, mu, sig, createdAt: now.toISOString() };
+    setScenarios(prev => [item, ...prev].slice(0, 30));
+    setScenarioId(item.id);
+  }, [D, r, mu, sig]);
+
+  const loadScenario = useCallback((id) => {
+    setScenarioId(id);
+    const s = scenarios.find(x => x.id === id);
+    if (s) {
+      setPresetId("baseline");
+      applyParams(s);
+    }
+  }, [applyParams, scenarios]);
+
+  // initial parse from URL
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const p = {
+        D: sp.get("D") ?? DEFAULT_PARAMS.D,
+        r: sp.get("r") ?? DEFAULT_PARAMS.r,
+        mu: sp.get("mu") ?? DEFAULT_PARAMS.mu,
+        sig: sp.get("sig") ?? DEFAULT_PARAMS.sig,
+      };
+      applyParams(p);
+      const t = sp.get("tab");
+      if (t) setTab(t);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // keep URL in sync
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      sp.set("D", Number(D).toFixed(4));
+      sp.set("r", Number(r).toFixed(4));
+      sp.set("mu", Number(mu).toFixed(4));
+      sp.set("sig", Number(sig).toFixed(4));
+      sp.set("tab", tab);
+      const next = `${window.location.pathname}?${sp.toString()}`;
+      window.history.replaceState({}, "", next);
+    } catch {}
+  }, [D, r, mu, sig, tab]);
+
+  const copyLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {}
+  }, []);
+
+  const downloadText = (filename, text, mime = "text/plain") => {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+  };
+
+  const exportCSV = useCallback(() => {
+    if (!simDone || !solFinal || !fnoFinal || !errField) return;
+    const N = solFinal.length;
+    const rows = ["x,u_solver,u_fno,abs_error"];
+    for (let i = 0; i < N; i++) {
+      const x = (i / (N - 1)).toFixed(6);
+      rows.push(`${x},${solFinal[i]},${fnoFinal[i]},${errField[i]}`);
+    }
+    downloadText("fno_demo_final_state.csv", rows.join("\n"), "text/csv");
+  }, [simDone, solFinal, fnoFinal, errField]);
+
   // ── Live IC preview ───────────────────────────────────────────────────────
   const icData = Array.from({length:128},(_,i)=>{
     const x=i/127; return Math.min(1,Math.max(0,Math.exp(-0.5*((x-mu)/sig)**2)));
@@ -568,43 +703,41 @@ Keep it conversational, technically accurate but accessible. Max 120 words total
 
   /* ── RENDER ─────────────────────────────────────────────────────────────── */
   return (
-    <div style={{background:PAL.bg,minHeight:"100vh",color:PAL.text,
-      fontFamily:"'JetBrains Mono',monospace",display:"flex",flexDirection:"column"}}>
+    <div className="app">
 
       {/* ── TOPBAR ── */}
-      <div style={{background:PAL.panel,borderBottom:`1px solid ${PAL.border}`,
-        padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56}}>
-        <div style={{display:"flex",alignItems:"center",gap:16}}>
-          <div style={{display:"flex",gap:5}}>
-            {[PAL.red,PAL.accent2,PAL.green].map((c,i)=>(
-              <div key={i} style={{width:10,height:10,borderRadius:"50%",background:c}} />
-            ))}
+      <div className="topbar">
+        <div className="topbarLeft">
+          <div className="dots">
+            <div className="dot" style={{ background: PAL.red }} />
+            <div className="dot" style={{ background: PAL.accent2 }} />
+            <div className="dot" style={{ background: PAL.green }} />
           </div>
-          <div style={{width:1,height:24,background:PAL.border}} />
-          <span style={{color:PAL.accent,fontSize:12,fontWeight:700,letterSpacing:2}}>IP0SB0200004</span>
-          <span style={{color:PAL.border}}>•</span>
-          <span style={{color:PAL.muted,fontSize:11}}>Neural Operator Surrogate — 1D Reaction–Diffusion</span>
-          <Tag label="PROTOTYPE" color={PAL.accent}/>
-          <Tag label="FNO" color={PAL.purple}/>
+          <div className="sep" />
+          <div className="titleRow">
+            <span className="projCode">IP0SB0200004</span>
+            <span style={{ color: PAL.border }}>•</span>
+            <span className="subTitle">Neural Operator Surrogate — 1D Reaction–Diffusion</span>
+            <Tag label="PROTOTYPE" color={PAL.accent} />
+            <Tag label="FNO" color={PAL.purple} />
+          </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:16}}>
-          <span style={{color:PAL.muted,fontSize:10}}>Sameer Shekhar  ·  BIT Mesra  ·  ChemE '26</span>
-          <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",
-            background:PAL.dim,borderRadius:6,border:`1px solid ${PAL.border}`}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:PAL.green,
-              boxShadow:`0 0 6px ${PAL.green}`}} />
-            <span style={{color:PAL.green,fontSize:10,fontWeight:700}}>LIVE</span>
+        <div className="topbarRight">
+          <span style={{ color: PAL.muted, fontSize: 10 }}>Sameer Shekhar  ·  BIT Mesra  ·  ChemE '26</span>
+          <div className="live">
+            <div className="liveDot" />
+            <span className="liveText">LIVE</span>
           </div>
         </div>
       </div>
 
       {/* ── PDE BANNER ── */}
-      <div style={{background:"#080d1a",borderBottom:`1px solid ${PAL.border}`,
-        padding:"8px 24px",display:"flex",gap:32,alignItems:"center",overflowX:"auto"}}>
-        <div style={{whiteSpace:"nowrap"}}>
-          <span style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:2,marginRight:8}}>PDE</span>
-          <span style={{color:PAL.accent2,fontSize:13,fontWeight:700}}>∂u/∂t = D·∂²u/∂x² + r·u·(1−u)</span>
+      <div className="banner">
+        <div className="bannerPde">
+          <span className="bannerLabel">PDE</span>
+          <span className="bannerEq">∂u/∂t = D·∂²u/∂x² + r·u·(1−u)</span>
         </div>
+        <div className="bannerKvs">
         {[
           ["D",D.toFixed(3),PAL.accent],
           ["r",r.toFixed(2),PAL.green],
@@ -613,11 +746,12 @@ Keep it conversational, technically accurate but accessible. Max 120 words total
           ["c = 2√(Dr)",waveSpeed,PAL.accent2],
           ["Da = rL²/D",(r/D).toFixed(2),PAL.red],
         ].map(([k,v,c])=>(
-          <div key={k} style={{whiteSpace:"nowrap"}}>
-            <span style={{color:PAL.muted,fontSize:10,marginRight:4}}>{k} =</span>
-            <span style={{color:c,fontSize:12,fontWeight:700}}>{v}</span>
+          <div key={k} className="kv">
+            <span className="kvK">{k} =</span>
+            <span className="kvV" style={{ color: c }}>{v}</span>
           </div>
         ))}
+        </div>
       </div>
 
       {/* ── BODY ── */}
@@ -681,6 +815,69 @@ Keep it conversational, technically accurate but accessible. Max 120 words total
 
           {/* Buttons */}
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {/* Presets / scenarios / share */}
+            <div style={{background:PAL.dim,borderRadius:8,padding:12,border:`1px solid ${PAL.border}`}}>
+              <div style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Quick Actions</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
+                <div>
+                  <div style={{color:PAL.border,fontSize:9,marginBottom:6}}>Preset</div>
+                  <select
+                    value={presetId}
+                    onChange={(e)=>applyPreset(e.target.value)}
+                    style={{width:"100%",padding:"10px 10px",borderRadius:8,background:PAL.bg,color:PAL.text,
+                      border:`1px solid ${PAL.border}`,fontFamily:"monospace",fontSize:11}}
+                  >
+                    {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                  </select>
+                </div>
+
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={randomize} style={{flex:1,padding:"10px",borderRadius:8,background:"transparent",
+                    color:PAL.accent,border:`1px solid ${PAL.accent}55`,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
+                    🎲 Randomize
+                  </button>
+                  <button onClick={resetParams} style={{flex:1,padding:"10px",borderRadius:8,background:"transparent",
+                    color:PAL.muted,border:`1px solid ${PAL.border}`,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
+                    ↩ Reset
+                  </button>
+                </div>
+
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={saveScenario} style={{flex:1,padding:"10px",borderRadius:8,background:"transparent",
+                    color:PAL.green,border:`1px solid ${PAL.green}55`,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
+                    💾 Save case
+                  </button>
+                  <button onClick={copyLink} style={{flex:1,padding:"10px",borderRadius:8,background:"transparent",
+                    color:copied?PAL.green:PAL.purple,border:`1px solid ${(copied?PAL.green:PAL.purple)}55`,cursor:"pointer",
+                    fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
+                    {copied ? "✓ Copied" : "🔗 Copy link"}
+                  </button>
+                </div>
+
+                <div>
+                  <div style={{color:PAL.border,fontSize:9,marginBottom:6}}>Load saved case</div>
+                  <select
+                    value={scenarioId}
+                    onChange={(e)=>loadScenario(e.target.value)}
+                    style={{width:"100%",padding:"10px 10px",borderRadius:8,background:PAL.bg,color:PAL.text,
+                      border:`1px solid ${PAL.border}`,fontFamily:"monospace",fontSize:11}}
+                  >
+                    <option value="">—</option>
+                    {scenarios.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button onClick={exportCSV} disabled={!simDone}
+                  style={{padding:"10px",borderRadius:8,background:simDone?`linear-gradient(135deg,${PAL.accent2}cc,${PAL.red}aa)`:PAL.bg,
+                    color:simDone?PAL.text:PAL.muted,border:`1px solid ${PAL.border}`,cursor:simDone?"pointer":"not-allowed",
+                    fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
+                  ⬇ Export CSV (final state)
+                </button>
+              </div>
+            </div>
+
             <button onClick={runSim} disabled={running}
               style={{padding:"12px",background:running?PAL.dim:`linear-gradient(135deg,${PAL.accent}cc,${PAL.purple}cc)`,
                 color:running?PAL.muted:PAL.text,border:"none",borderRadius:8,cursor:running?"not-allowed":"pointer",
