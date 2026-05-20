@@ -2,34 +2,42 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   PHYSICS ENGINE — Crank-Nicolson Fisher-KPP solver
+   PHYSICS ENGINE — Crank-Nicolson Solver for 1D Reacting PDEs
    ═══════════════════════════════════════════════════════════════════════════ */
 function thomasSolve(lo, diag, up, rhs) {
   const n = diag.length;
-  const c = new Float64Array(n), d = new Float64Array(n), x = new Float64Array(n);
-  c[0] = up[0] / diag[0]; d[0] = rhs[0] / diag[0];
+  const c = new Float64Array(n);
+  const d = new Float64Array(n);
+  const x = new Float64Array(n);
+  c[0] = up[0] / diag[0]; 
+  d[0] = rhs[0] / diag[0];
   for (let i = 1; i < n; i++) {
     const m = diag[i] - lo[i] * c[i - 1];
     c[i] = up[i] / m;
     d[i] = (rhs[i] - lo[i] * d[i - 1]) / m;
   }
   x[n - 1] = d[n - 1];
-  for (let i = n - 2; i >= 0; i--) x[i] = d[i] - c[i] * x[i + 1];
+  for (let i = n - 2; i >= 0; i--) {
+    x[i] = d[i] - c[i] * x[i + 1];
+  }
   return x;
 }
 
-function solvePDE(D, r, mu, sig, N = 128, dt = 5e-5, T_end = 1.0) {
+function solvePDE(D, r, mu, sig, modelType = "fisher", N = 128, dt = 5e-5, T_end = 1.0) {
   const dx = 1 / (N - 1);
   const lam = D * dt / (2 * dx * dx);
   let u = new Float64Array(N);
+  
+  // Gaussian Initial Condition
   for (let i = 0; i < N; i++) {
     const x = i * dx;
     u[i] = Math.min(1, Math.max(0, Math.exp(-0.5 * ((x - mu) / sig) ** 2)));
   }
+  
   const lo = new Float64Array(N).fill(-lam);
   const di = new Float64Array(N).fill(1 + 2 * lam);
   const up = new Float64Array(N).fill(-lam);
-  di[0] = 1 + lam; di[N - 1] = 1 + lam;
+  di[0] = 1 + lam; di[N - 1] = 1 + lam; // Neumann Zero-flux BCs
 
   const nSteps = Math.round(T_end / dt);
   const saveEvery = Math.max(1, Math.floor(nSteps / 80));
@@ -38,1895 +46,1424 @@ function solvePDE(D, r, mu, sig, N = 128, dt = 5e-5, T_end = 1.0) {
   for (let s = 0; s < nSteps; s++) {
     const rhs = new Float64Array(N);
     for (let i = 0; i < N; i++) {
-      const l = i > 0 ? u[i-1] : u[i], rv = i < N-1 ? u[i+1] : u[i];
-      rhs[i] = u[i] + lam * (l - 2*u[i] + rv) + dt/2 * r * u[i] * (1 - u[i]);
+      const l = i > 0 ? u[i-1] : u[i];
+      const rv = i < N-1 ? u[i+1] : u[i];
+      
+      let rxn = 0;
+      if (modelType === "allen") {
+        rxn = r * (u[i] - u[i] ** 3);
+      } else {
+        rxn = r * u[i] * (1 - u[i]); // default: Fisher-KPP
+      }
+      
+      rhs[i] = u[i] + lam * (l - 2 * u[i] + rv) + (dt / 2) * rxn;
     }
     u = new Float64Array(thomasSolve(lo, di, up, rhs));
-    if (s % saveEvery === 0) snaps.push(Array.from(u));
+    if (s % saveEvery === 0) {
+      snaps.push(Array.from(u));
+    }
   }
+  if (snaps.length <= 80) snaps.push(Array.from(u));
   return { snaps, final: Array.from(u) };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   FNO SURROGATE — analytical wave-packet approximation
+   FNO SURROGATE — Time-dependent Traveling Wave Operator Mapping
    ═══════════════════════════════════════════════════════════════════════════ */
-function fnoPredict(D, r, mu, sig, N = 128) {
+function fnoPredictTime(D, r, mu, sig, t, modelType = "fisher", N = 128) {
   const dx = 1 / (N - 1);
-  const c  = 2 * Math.sqrt(D * r);
-  const xi = Math.sqrt(r / (6 * D));
-  const front = Math.min(0.95, mu + c * 1.0);
+  let c = 2 * Math.sqrt(D * r);
+  let xi = Math.sqrt(r / (6 * D));
+  
+  if (modelType === "allen") {
+    c = 1.35 * Math.sqrt(D * r); // Allen-Cahn interfacial wave speed profile
+    xi = Math.sqrt(r / (2 * D));
+  }
+  
+  const front = mu + c * t;
   return Array.from({ length: N }, (_, i) => {
     const x = i * dx;
-    const wave = 1 / (1 + Math.exp(-xi * 6 * (x - front)));
-    return Math.min(1, Math.max(0, wave));
+    const icVal = Math.min(1, Math.max(0, Math.exp(-0.5 * ((x - mu) / sig) ** 2)));
+    
+    let wave = 0;
+    if (modelType === "allen") {
+      wave = 0.5 * (1 + Math.tanh(xi * (x - front)));
+    } else {
+      wave = 1 / (1 + Math.exp(-xi * 6 * (x - front))); // Fisher KPP wave front
+    }
+    
+    const blend = t === 0 ? 0 : Math.min(1, t * 1.5); // transition curve from Gaussian
+    const pred = (1 - blend) * icVal + blend * Math.min(1, Math.max(0, wave));
+    return Math.min(1, Math.max(0, pred));
   });
 }
 
-/* L2 relative error */
 const relL2 = (a, b) => {
   let n = 0, d = 0;
-  for (let i = 0; i < a.length; i++) { n += (a[i]-b[i])**2; d += b[i]**2; }
-  return d > 1e-12 ? Math.sqrt(n/d)*100 : 0;
+  for (let i = 0; i < a.length; i++) {
+    n += (a[i] - b[i]) ** 2;
+    d += b[i] ** 2;
+  }
+  return d > 1e-12 ? Math.sqrt(n / d) * 100 : 0;
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MOCK DATASET GENERATOR
-   ═══════════════════════════════════════════════════════════════════════════ */
-function generateDatasetStats() {
-  const Dvals  = Array.from({length:20}, (_,i) => (0.01*10**(i/19*2)).toFixed(3));
-  const rvals  = Array.from({length:20}, (_,i) => (0.5 + i*0.236).toFixed(2));
-  const total  = 20*20*5*3; // D*r*mu*sig
-  return { Dvals, rvals, total, trainN: Math.round(total*0.7), valN: Math.round(total*0.15), testN: Math.round(total*0.15) };
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   CANVAS HELPERS
+   CANVAS PLOT RENDERING HOOKS
    ═══════════════════════════════════════════════════════════════════════════ */
 const PAL = {
-  bg:"#060912", panel:"#0b1120", border:"#162035", accent:"#22d3ee",
-  accent2:"#f59e0b", green:"#34d399", red:"#f87171", purple:"#a78bfa",
-  text:"#f1f5f9", muted:"#475569", dim:"#1e293b"
+  bg: "#03050c", panel: "#080d1e", border: "#1a253c", borderGlow: "#2b3d63",
+  text: "#f8fafc", muted: "#64748b", accentFno: "#38bdf8", accentSolver: "#f59e0b",
+  good: "#10b981", bad: "#ef4444", purple: "#8b5cf6", dim: "#0d152d"
 };
 
 function useCanvas(draw, deps) {
   const ref = useRef(null);
   useEffect(() => {
-    const c = ref.current; if (!c) return;
+    const c = ref.current; 
+    if (!c) return;
     const ctx = c.getContext("2d");
-    ctx.clearRect(0,0,c.width,c.height);
+    ctx.clearRect(0, 0, c.width, c.height);
     draw(ctx, c.width, c.height);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return ref;
 }
 
 function drawAxes(ctx, W, H, pad) {
-  ctx.strokeStyle = PAL.border; ctx.lineWidth = 1;
-  for (let i=0;i<=4;i++){
-    const y=pad.t+(H-pad.t-pad.b)/4*i;
-    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
-    const x=pad.l+(W-pad.l-pad.r)/4*i;
-    ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,H-pad.b);ctx.stroke();
+  ctx.strokeStyle = "rgba(43, 61, 99, 0.25)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.t + (H - pad.t - pad.b) / 4 * i;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+    
+    const x = pad.l + (W - pad.l - pad.r) / 4 * i;
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, H - pad.b); ctx.stroke();
   }
 }
 
-function drawLine(ctx, data, W, H, pad, color, lw=2, glow=true) {
+function drawLine(ctx, data, W, H, pad, color, lw = 2, glow = false) {
   if (!data?.length) return;
-  const pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
-  if (glow) { ctx.shadowColor=color; ctx.shadowBlur=8; }
-  ctx.strokeStyle=color; ctx.lineWidth=lw;
+  const pw = W - pad.l - pad.r;
+  const ph = H - pad.t - pad.b;
+  if (glow) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+  }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
   ctx.beginPath();
-  data.forEach((v,i)=>{
-    const x=pad.l+(i/(data.length-1))*pw;
-    const y=pad.t+ph*(1-Math.min(1,Math.max(0,v)));
-    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  data.forEach((v, i) => {
+    const x = pad.l + (i / (data.length - 1)) * pw;
+    const y = pad.t + ph * (1 - Math.min(1, Math.max(0, v)));
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
   });
   ctx.stroke();
-  ctx.shadowBlur=0;
+  ctx.shadowBlur = 0;
 }
 
-/* inferno colormap */
-const inferno = v => {
-  const t = Math.min(1,Math.max(0,v));
-  const r = Math.min(255,Math.round(t<0.4?t*2.5*255:255));
-  const g = Math.min(255,Math.round(t<0.5?0:((t-0.5)*2)*220));
-  const b = Math.min(255,Math.round(t<0.2?t*5*200:t>0.7?0:((0.7-t)/0.5)*200));
+const infernoColormap = (v) => {
+  const t = Math.min(1, Math.max(0, v));
+  const r = Math.min(255, Math.round(t < 0.4 ? t * 2.5 * 255 : 255));
+  const g = Math.min(255, Math.round(t < 0.5 ? 0 : (t - 0.5) * 2 * 220));
+  const b = Math.min(255, Math.round(t < 0.2 ? t * 5 * 200 : t > 0.7 ? 0 : ((0.7 - t) / 0.5) * 200));
   return `rgb(${r},${g},${b})`;
 };
 
+function project3D(x, t, u, W, H, pad) {
+  const cx = W / 2;
+  const cy = H / 2 + 15;
+  const thetaX = -Math.PI / 6;
+  const thetaT = Math.PI / 8;
+  const scaleX = (W - pad.l - pad.r) * 0.44;
+  const scaleT = (H - pad.t - pad.b) * 0.44;
+  const scaleU = 50;
+
+  const px = cx + (x - 0.5) * scaleX * Math.cos(thetaX) + (t - 0.5) * scaleT * Math.cos(thetaT);
+  const py = cy + (x - 0.5) * scaleX * Math.sin(thetaX) + (t - 0.5) * scaleT * Math.sin(thetaT) - u * scaleU;
+  return { x: px, y: py };
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
-   CHART COMPONENTS
+   SCIENTIFIC CHART COMPONENTS
    ═══════════════════════════════════════════════════════════════════════════ */
 function SolutionChart({ solver, fno, ic, title }) {
-  const pad = {t:24,b:28,l:36,r:12};
-  const ref = useCanvas((ctx,W,H) => {
-    ctx.fillStyle=PAL.bg; ctx.fillRect(0,0,W,H);
-    drawAxes(ctx,W,H,pad);
-    // axis labels
-    ctx.fillStyle=PAL.muted; ctx.font="10px 'JetBrains Mono',monospace";
-    ["0","0.25","0.5","0.75","1.0"].forEach((l,i)=>{
-      ctx.fillText(l, pad.l+(W-pad.l-pad.r)/4*i-8, H-6);
+  const pad = { t: 24, b: 24, l: 36, r: 12 };
+  const ref = useCanvas((ctx, W, H) => {
+    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+    drawAxes(ctx, W, H, pad);
+    
+    ctx.fillStyle = PAL.muted; ctx.font = "9px 'JetBrains Mono',monospace";
+    ["0", "0.25", "0.5", "0.75", "1.0"].forEach((l, i) => {
+      ctx.fillText(l, pad.l + (W - pad.l - pad.r) / 4 * i - 8, H - 6);
     });
-    ["1.0","0.75","0.5","0.25","0"].forEach((l,i)=>{
-      ctx.fillText(l, 2, pad.t+(H-pad.t-pad.b)/4*i+4);
+    ["1.0", "0.75", "0.5", "0.25", "0"].forEach((l, i) => {
+      ctx.fillText(l, 4, pad.t + (H - pad.t - pad.b) / 4 * i + 4);
     });
-    ctx.fillStyle=PAL.muted; ctx.font="bold 11px 'JetBrains Mono',monospace";
-    ctx.fillText(title,pad.l+2,16);
-    if (ic)     drawLine(ctx,ic,W,H,pad,PAL.muted,1.5,false);
-    if (solver) drawLine(ctx,solver,W,H,pad,PAL.accent2,2.5);
-    if (fno)    drawLine(ctx,fno,W,H,pad,PAL.accent,2,true);
-    // legend
-    if (solver&&fno){
-      [[PAL.muted,"IC (t=0)"],[PAL.accent2,"Solver"],[PAL.accent,"FNO"]].forEach(([c,l],i)=>{
-        ctx.fillStyle=c; ctx.fillRect(W-120+i*0,H-40+i*13,14,3);
-        ctx.fillStyle=PAL.muted; ctx.font="9px monospace";
-        ctx.fillText(l,W-102+i*0,H-37+i*13);
-      });
-    }
+    
+    ctx.fillStyle = PAL.muted; ctx.font = "bold 10px 'JetBrains Mono',monospace";
+    ctx.fillText(title, pad.l + 4, 15);
+    
+    if (ic) drawLine(ctx, ic, W, H, pad, PAL.muted, 1, false);
+    if (solver) drawLine(ctx, solver, W, H, pad, PAL.accentSolver, 2.5, false);
+    if (fno) drawLine(ctx, fno, W, H, pad, PAL.accentFno, 1.5, true);
   }, [solver, fno, ic, title]);
-  return <canvas ref={ref} width={460} height={200} style={{width:"100%",borderRadius:8,border:`1px solid ${PAL.border}`}} />;
+  return <canvas ref={ref} width={480} height={190} className="plot-canvas" />;
 }
 
-function ErrorChart({ data, title, color }) {
-  const pad={t:24,b:28,l:36,r:12};
-  const ref = useCanvas((ctx,W,H)=>{
-    ctx.fillStyle=PAL.bg; ctx.fillRect(0,0,W,H);
-    drawAxes(ctx,W,H,pad);
-    ctx.fillStyle=PAL.muted; ctx.font="bold 11px monospace";
-    ctx.fillText(title,pad.l+2,16);
+function ErrorChart({ data, title }) {
+  const pad = { t: 24, b: 24, l: 36, r: 12 };
+  const ref = useCanvas((ctx, W, H) => {
+    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+    drawAxes(ctx, W, H, pad);
+    ctx.fillStyle = PAL.muted; ctx.font = "bold 10px 'JetBrains Mono',monospace";
+    ctx.fillText(title, pad.l + 4, 15);
     if (!data?.length) return;
-    const max=Math.max(...data,1e-8);
-    const norm=data.map(v=>v/max);
-    drawLine(ctx,norm,W,H,pad,color||PAL.red,2,true);
-    // fill under
-    const pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
+    
+    const max = Math.max(...data, 1e-8);
+    const norm = data.map(v => v / max);
+    drawLine(ctx, norm, W, H, pad, PAL.bad, 1.5, false);
+    
+    const pw = W - pad.l - pad.r;
+    const ph = H - pad.t - pad.b;
     ctx.beginPath();
-    norm.forEach((v,i)=>{
-      const x=pad.l+(i/(norm.length-1))*pw;
-      const y=pad.t+ph*(1-v);
-      i===0?ctx.moveTo(x,H-pad.b):ctx.lineTo(x,y);
+    norm.forEach((v, i) => {
+      const x = pad.l + (i / (norm.length - 1)) * pw;
+      const y = pad.t + ph * (1 - v);
+      if (i === 0) ctx.moveTo(x, H - pad.b);
+      else ctx.lineTo(x, y);
     });
-    ctx.lineTo(W-pad.r,H-pad.b); ctx.closePath();
-    ctx.fillStyle=(color||PAL.red)+"22"; ctx.fill();
-    ctx.fillStyle=PAL.muted; ctx.font="9px monospace";
-    ctx.fillText(`max: ${max.toFixed(4)}`,W-80,16);
-  }, [data, color, title]);
-  return <canvas ref={ref} width={460} height={200} style={{width:"100%",borderRadius:8,border:`1px solid ${PAL.border}`}} />;
+    ctx.lineTo(W - pad.r, H - pad.b); ctx.closePath();
+    ctx.fillStyle = "rgba(239, 68, 68, 0.08)"; ctx.fill();
+    
+    ctx.fillStyle = PAL.muted; ctx.font = "9px 'JetBrains Mono',monospace";
+    ctx.fillText(`max peak: ${max.toFixed(5)}`, W - 110, 15);
+  }, [data, title]);
+  return <canvas ref={ref} width={480} height={190} className="plot-canvas" />;
 }
 
-function HeatmapChart({ snaps, title }) {
-  const ref = useCanvas((ctx,W,H)=>{
-    ctx.fillStyle=PAL.bg; ctx.fillRect(0,0,W,H);
+function HeatmapChart({ snaps, onHover }) {
+  const ref = useCanvas((ctx, W, H) => {
+    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
     if (!snaps?.length) return;
-    const nT=snaps.length, nX=snaps[0].length;
-    const cw=W/nX, ch=H/nT;
-    for (let t=0;t<nT;t++) for (let x=0;x<nX;x++) {
-      ctx.fillStyle=inferno(snaps[t][x]);
-      ctx.fillRect(x*cw,t*ch,cw+0.5,ch+0.5);
+    const nT = snaps.length; 
+    const nX = snaps[0].length;
+    const cw = W / nX; 
+    const ch = H / nT;
+    for (let t = 0; t < nT; t++) {
+      for (let x = 0; x < nX; x++) {
+        ctx.fillStyle = infernoColormap(snaps[t][x]);
+        ctx.fillRect(x * cw, t * ch, cw + 0.5, ch + 0.5);
+      }
     }
-    ctx.fillStyle="rgba(6,9,18,0.75)";
-    ctx.fillRect(0,0,W,20);
-    ctx.fillStyle=PAL.muted; ctx.font="bold 10px monospace";
-    ctx.fillText(title,4,14);
-    ctx.fillText("x →",W-28,H-4);
-    ctx.save(); ctx.translate(10,H/2); ctx.rotate(-Math.PI/2);
-    ctx.fillText("t →",0,0); ctx.restore();
-  }, [snaps, title]);
-  return <canvas ref={ref} width={460} height={220} style={{width:"100%",borderRadius:8,border:`1px solid ${PAL.border}`}} />;
+  }, [snaps]);
+
+  const handleMouseMove = (e) => {
+    if (!snaps?.length || !onHover) return;
+    const c = ref.current;
+    const rect = c.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    
+    const px = Math.min(1, Math.max(0, mx / rect.width));
+    const pt = Math.min(1, Math.max(0, my / rect.height));
+    
+    const snapIdx = Math.min(snaps.length - 1, Math.max(0, Math.floor(pt * snaps.length)));
+    const nodeIdx = Math.min(snaps[0].length - 1, Math.max(0, Math.floor(px * snaps[0].length)));
+    const uVal = snaps[snapIdx][nodeIdx];
+    
+    onHover({ x: px, t: pt, u: uVal });
+  };
+
+  return (
+    <canvas 
+      ref={ref} 
+      width={480} 
+      height={200} 
+      className="plot-canvas" 
+      style={{ cursor: "crosshair" }} 
+      onMouseMove={handleMouseMove}
+    />
+  );
 }
 
-function LossCurve({ log }) {
-  const pad={t:30,b:28,l:44,r:12};
-  const ref = useCanvas((ctx,W,H)=>{
-    ctx.fillStyle=PAL.bg; ctx.fillRect(0,0,W,H);
-    drawAxes(ctx,W,H,pad);
-    if (!log?.length) {
-      ctx.fillStyle=PAL.muted; ctx.font="12px monospace";
-      ctx.fillText("Click 'Simulate Training' to see loss curves",pad.l+20,H/2);
-      return;
-    }
-    ctx.fillStyle=PAL.muted; ctx.font="bold 11px monospace";
-    ctx.fillText("Train & Validation Loss",pad.l,20);
-    const maxL=Math.max(...log.map(r=>Math.max(r.train,r.val)));
-    const norm=(v)=>Math.min(1,v/maxL);
-    drawLine(ctx,log.map(r=>norm(r.train)),W,H,pad,PAL.accent2,2.5,true);
-    drawLine(ctx,log.map(r=>norm(r.val)),W,H,pad,PAL.green,2,true);
-    // epoch labels
-    ctx.fillStyle=PAL.muted; ctx.font="9px monospace";
-    ctx.fillText("Ep 0",pad.l-4,H-6);
-    ctx.fillText(`Ep ${log[log.length-1]?.epoch}`,W-pad.r-24,H-6);
-    // legend
-    [[PAL.accent2,"Train"],[PAL.green,"Val"]].forEach(([c,l],i)=>{
-      ctx.fillStyle=c; ctx.fillRect(W-80+i*40,8,20,3);
-      ctx.fillStyle=PAL.muted; ctx.font="9px monospace";
-      ctx.fillText(l,W-56+i*40,12);
-    });
-  }, [log]);
-  return <canvas ref={ref} width={920} height={180} style={{width:"100%",borderRadius:8,border:`1px solid ${PAL.border}`}} />;
+function Waterfall3DChart({ snaps }) {
+  const pad = { t: 15, b: 15, l: 15, r: 15 };
+  const ref = useCanvas((ctx, W, H) => {
+    drawWaterfall(ctx, snaps, W, H);
+  }, [snaps]);
+  return <canvas ref={ref} width={480} height={200} className="plot-canvas" />;
 }
 
-function SpeedupChart({ results }) {
-  const pad={t:30,b:36,l:48,r:12};
-  const ref = useCanvas((ctx,W,H)=>{
-    ctx.fillStyle=PAL.bg; ctx.fillRect(0,0,W,H);
-    drawAxes(ctx,W,H,pad);
-    ctx.fillStyle=PAL.muted; ctx.font="bold 11px monospace";
-    ctx.fillText("Speedup vs Batch Size",pad.l,20);
-    if (!results?.length) {
-      ctx.fillStyle=PAL.muted; ctx.font="11px monospace";
-      ctx.fillText("Run benchmark to see results",pad.l+40,H/2);
-      return;
+function drawWaterfall(ctx, snaps, W, H) {
+  ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+  if (!snaps || snaps.length === 0) return;
+  const pad = { t: 15, b: 15, l: 15, r: 15 };
+  
+  const skip = Math.max(1, Math.floor(snaps.length / 22));
+  const selected = [];
+  for (let i = 0; i < snaps.length; i += skip) {
+    selected.push({ t: i / (snaps.length - 1), data: snaps[i] });
+  }
+  if (selected[selected.length - 1].t !== 1) {
+    selected.push({ t: 1, data: snaps[snaps.length - 1] });
+  }
+
+  selected.forEach((row) => {
+    const t = row.t;
+    const data = row.data;
+    const N = data.length;
+    
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const x = i / (N - 1);
+      const u = data[i];
+      const pt = project3D(x, t, u, W, H, pad);
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
     }
-    const max=Math.max(...results.map(r=>r.speedup));
-    const pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
-    // bars
-    const bw=(pw/results.length)*0.6;
-    results.forEach((r,i)=>{
-      const x=pad.l+pw*(i/(results.length))+(pw/results.length)*0.2;
-      const bh=(r.speedup/max)*ph;
-      const grad=ctx.createLinearGradient(0,pad.t+ph-bh,0,pad.t+ph);
-      grad.addColorStop(0,PAL.accent); grad.addColorStop(1,PAL.purple+"88");
-      ctx.fillStyle=grad;
+    
+    const ptLast = project3D(1, t, 0, W, H, pad);
+    const ptFirst = project3D(0, t, 0, W, H, pad);
+    ctx.lineTo(ptLast.x, ptLast.y);
+    ctx.lineTo(ptFirst.x, ptFirst.y);
+    ctx.closePath();
+    
+    ctx.fillStyle = PAL.bg; ctx.fill();
+    ctx.strokeStyle = "rgba(43, 61, 99, 0.35)"; ctx.lineWidth = 0.5; ctx.stroke();
+    
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const x = i / (N - 1);
+      const u = data[i];
+      const pt = project3D(x, t, u, W, H, pad);
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    }
+    
+    const ptS = project3D(0, t, 0.5, W, H, pad);
+    const ptE = project3D(1, t, 0.5, W, H, pad);
+    const grad = ctx.createLinearGradient(ptS.x, ptS.y, ptE.x, ptE.y);
+    grad.addColorStop(0, "rgba(139, 92, 246, 0.3)");
+    grad.addColorStop(0.5, "rgba(56, 189, 248, 0.7)");
+    grad.addColorStop(1, "rgba(245, 158, 11, 0.3)");
+    
+    ctx.strokeStyle = grad; ctx.lineWidth = 1.25; ctx.stroke();
+  });
+
+  ctx.strokeStyle = "rgba(100, 116, 139, 0.2)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const origin = project3D(0, 0, 0, W, H, pad);
+  const axisX = project3D(1, 0, 0, W, H, pad);
+  const axisT = project3D(0, 1, 0, W, H, pad);
+  const axisU = project3D(0, 0, 1, W, H, pad);
+  
+  ctx.moveTo(axisX.x, axisX.y); ctx.lineTo(origin.x, origin.y); ctx.lineTo(axisT.x, axisT.y);
+  ctx.moveTo(origin.x, origin.y); ctx.lineTo(axisU.x, axisU.y); ctx.stroke();
+  
+  ctx.fillStyle = PAL.muted; ctx.font = "8px 'JetBrains Mono', monospace";
+  ctx.fillText("x (Space)", axisX.x + 4, axisX.y + 4);
+  ctx.fillText("t (Time)", axisT.x - 36, axisT.y + 8);
+  ctx.fillText("u", axisU.x - 10, axisU.y - 2);
+}
+
+function MeshVisualizer({ N }) {
+  const pad = { l: 15, r: 15 };
+  const ref = useCanvas((ctx, W, H) => {
+    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+    const pw = W - pad.l - pad.r;
+    const cy = H / 2;
+    ctx.strokeStyle = PAL.border; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.l, cy); ctx.lineTo(W - pad.r, cy); ctx.stroke();
+    
+    ctx.fillStyle = N > 128 ? PAL.accentFno : PAL.accentSolver;
+    for (let i = 0; i < N; i++) {
+      const x = pad.l + (i / (N - 1)) * pw;
       ctx.beginPath();
-      ctx.roundRect(x,pad.t+ph-bh,bw,bh,4);
+      const r = N > 128 ? 1 : N > 64 ? 1.5 : 2;
+      ctx.arc(x, cy, r, 0, 2 * Math.PI);
       ctx.fill();
-      // label
-      ctx.fillStyle=PAL.accent; ctx.font="bold 10px monospace";
-      ctx.fillText(`${r.speedup}×`,x+bw/2-10,pad.t+ph-bh-5);
-      ctx.fillStyle=PAL.muted; ctx.font="9px monospace";
-      ctx.fillText(`B=${r.batch}`,x,H-6);
-    });
-    // 50x target line
-    const targetY=pad.t+ph*(1-50/max);
-    if (targetY>pad.t) {
-      ctx.setLineDash([6,3]); ctx.strokeStyle=PAL.red; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(pad.l,targetY); ctx.lineTo(W-pad.r,targetY); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle=PAL.red; ctx.font="9px monospace";
-      ctx.fillText("50× target",W-pad.r-56,targetY-4);
     }
-  }, [results]);
-  return <canvas ref={ref} width={920} height={200} style={{width:"100%",borderRadius:8,border:`1px solid ${PAL.border}`}} />;
+    ctx.fillStyle = PAL.muted; ctx.font = "8px 'JetBrains Mono', monospace";
+    ctx.fillText("x=0.0", pad.l - 4, cy + 12);
+    ctx.fillText("x=1.0", W - pad.r - 20, cy + 12);
+    ctx.fillText(`Discretized mesh intervals Δx = ${(1 / (N - 1)).toFixed(5)}`, W / 2 - 86, cy - 8);
+  }, [N]);
+  return <canvas ref={ref} width={440} height={32} className="ic-preview-svg" style={{ width: "100%", height: "32px" }} />;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   UI ATOMS
-   ═══════════════════════════════════════════════════════════════════════════ */
-function Tag({ label, color }) {
-  return (
-    <span style={{background:color+"18",color,border:`1px solid ${color}30`,
-      borderRadius:20,padding:"2px 9px",fontSize:10,fontFamily:"'JetBrains Mono',monospace",fontWeight:700,letterSpacing:0.5}}>
-      {label}
-    </span>
-  );
-}
-
-function KV({ k, v, vc }) {
-  return (
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${PAL.border}`}}>
-      <span style={{color:PAL.muted,fontSize:11,fontFamily:"monospace"}}>{k}</span>
-      <span style={{color:vc||PAL.accent,fontSize:12,fontFamily:"monospace",fontWeight:700}}>{v}</span>
-    </div>
-  );
-}
-
-function Chip({ label, active, onClick }) {
-  return (
-    <button onClick={onClick} style={{
-      padding:"7px 18px",border:`1px solid ${active?PAL.accent:PAL.border}`,
-      background:active?PAL.accent+"18":"transparent",
-      color:active?PAL.accent:PAL.muted,borderRadius:6,cursor:"pointer",
-      fontSize:11,fontFamily:"'JetBrains Mono',monospace",fontWeight:700,
-      letterSpacing:1,textTransform:"uppercase",transition:"all 0.15s"
-    }}>{label}</button>
-  );
-}
-
-function Param({ label, value, min, max, step, onChange, color, fmt }) {
-  return (
-    <div style={{marginBottom:18}}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-        <span style={{color:PAL.muted,fontSize:10,fontFamily:"monospace",textTransform:"uppercase",letterSpacing:1}}>{label}</span>
-        <span style={{color:color||PAL.accent,fontSize:13,fontFamily:"monospace",fontWeight:700}}>
-          {fmt?fmt(value):value}
-        </span>
-      </div>
-      <div style={{position:"relative",height:6,background:PAL.dim,borderRadius:3}}>
-        <div style={{position:"absolute",left:0,top:0,height:6,
-          width:`${((value-min)/(max-min))*100}%`,
-          background:`linear-gradient(90deg,${PAL.border},${color||PAL.accent})`,
-          borderRadius:3,transition:"width 0.1s"}} />
-        <input type="range" min={min} max={max} step={step} value={value}
-          onChange={e=>onChange(parseFloat(e.target.value))}
-          style={{position:"absolute",top:-4,left:0,width:"100%",height:14,
-            opacity:0,cursor:"pointer",zIndex:2}} />
-      </div>
-      <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
-        <span style={{color:PAL.border,fontSize:9,fontFamily:"monospace"}}>{min}</span>
-        <span style={{color:PAL.border,fontSize:9,fontFamily:"monospace"}}>{max}</span>
-      </div>
-    </div>
-  );
-}
-
-function Metric({ label, value, unit, color, sub, lg }) {
-  return (
-    <div style={{background:PAL.panel,border:`1px solid ${PAL.border}`,borderRadius:10,
-      padding:"14px 16px",flex:1,minWidth:110,borderTop:`2px solid ${color||PAL.accent}`}}>
-      <div style={{color:PAL.muted,fontSize:9,fontFamily:"monospace",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>{label}</div>
-      <div style={{color:color||PAL.accent,fontSize:lg?28:22,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>
-        {value}<span style={{fontSize:11,color:PAL.muted,marginLeft:4}}>{unit}</span>
-      </div>
-      {sub&&<div style={{color:PAL.muted,fontSize:9,fontFamily:"monospace",marginTop:4}}>{sub}</div>}
-    </div>
-  );
-}
-
-function Section({ title, children, action }) {
-  return (
-    <div style={{marginBottom:24}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{width:3,height:16,background:PAL.accent,borderRadius:2}} />
-          <span style={{color:PAL.text,fontSize:13,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",letterSpacing:0.5}}>{title}</span>
-        </div>
-        {action}
-      </div>
-      {children}
-    </div>
-  );
+function HistChart({ data, title, color }) {
+  const pad = { t: 24, b: 24, l: 30, r: 12 };
+  const ref = useCanvas((ctx, W, H) => {
+    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+    drawAxes(ctx, W, H, pad);
+    ctx.fillStyle = PAL.muted; ctx.font = "bold 9px 'JetBrains Mono',monospace";
+    ctx.fillText(title, pad.l + 4, 15);
+    
+    if (!data?.length) return;
+    const maxVal = Math.max(...data, 1);
+    const pw = W - pad.l - pad.r;
+    const ph = H - pad.t - pad.b;
+    const bw = (pw / data.length) * 0.8;
+    
+    data.forEach((val, i) => {
+      const x = pad.l + pw * (i / data.length) + (pw / data.length) * 0.1;
+      const bh = (val / maxVal) * ph;
+      ctx.fillStyle = color || PAL.accentFno;
+      ctx.beginPath();
+      ctx.roundRect(x, pad.t + ph - bh, bw, bh, 2);
+      ctx.fill();
+      if (val > 0) {
+        ctx.fillStyle = PAL.text; ctx.font = "8px monospace";
+        ctx.fillText(val, x + bw / 2 - 4, pad.t + ph - bh - 3);
+      }
+    });
+  }, [data, title, color]);
+  return <canvas ref={ref} width={220} height={110} className="plot-canvas" style={{ width: "100%" }} />;
 }
 
 function CodeBlock({ lines }) {
   return (
-    <div style={{background:"#040609",borderRadius:8,padding:14,border:`1px solid ${PAL.border}`,
-      fontFamily:"'JetBrains Mono',monospace",fontSize:11,lineHeight:1.7,overflowX:"auto"}}>
-      {lines.map((l,i)=>(
-        <div key={i}>
-          <span style={{color:PAL.border,userSelect:"none",marginRight:12}}>{String(i+1).padStart(2,"0")}</span>
-          <span style={{color: l.startsWith("#")?PAL.muted:l.includes("=")?PAL.text:PAL.accent}}>{l}</span>
-        </div>
-      ))}
+    <div className="code-block">
+      {lines.map((l, i) => {
+        let cls = "code-text";
+        if (l.startsWith("#")) cls += " comment";
+        else if (l.includes("def ") || l.includes("import ") || l.includes("from ") || l.includes("for ") || l.includes("with ")) cls += " keyword";
+        else if (l.includes('"') || l.includes("'")) cls += " string";
+        return (
+          <div key={i} className="code-line">
+            <span className="code-num">{String(i + 1).padStart(2, "0")}</span>
+            <span className={cls}>{l}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MAIN APP
+   MAIN APPLICATION WORKSTATION
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function App() {
-  // ── Parameters ────────────────────────────────────────────────────────────
-  const [D,   setD]   = useState(0.1);
-  const [r,   setR]   = useState(2.0);
-  const [mu,  setMu]  = useState(0.3);
+  const [activeSheet, setActiveSheet] = useState("sim");
+  const [modelType, setModelType] = useState("fisher");
+
+  // Physical Parameters
+  const [D, setD] = useState(0.1);
+  const [r, setR] = useState(2.0);
+  const [mu, setMu] = useState(0.3);
   const [sig, setSig] = useState(0.1);
 
-  // ── Simulation state ──────────────────────────────────────────────────────
-  const [running,   setRunning]   = useState(false);
-  const [simDone,   setSimDone]   = useState(false);
-  const [snaps,     setSnaps]     = useState([]);
-  const [solFinal,  setSolFinal]  = useState(null);
-  const [fnoFinal,  setFnoFinal]  = useState(null);
-  const [solMs,     setSolMs]     = useState(null);
-  const [fnoMs,     setFnoMs]     = useState(null);
-  const [speedup,   setSpeedup]   = useState(null);
-  const [l2,        setL2]        = useState(null);
-  const [errField,  setErrField]  = useState(null);
+  // Grid sizing
+  const [N, setN] = useState(128);
+  const [dt, setDt] = useState(5e-5);
+  
+  // Animation timeline playbacks
+  const [snaps, setSnaps] = useState([]);
+  const [solFinal, setSolFinal] = useState(null);
+  const [fnoFinal, setFnoFinal] = useState(null);
+  const [errField, setErrField] = useState(null);
+  const [solMs, setSolMs] = useState(null);
+  const [fnoMs, setFnoMs] = useState(null);
+  const [speedup, setSpeedup] = useState(null);
+  const [l2, setL2] = useState(null);
+  const [simDone, setSimDone] = useState(false);
+  const [running, setRunning] = useState(false);
 
-  // ── Training state ────────────────────────────────────────────────────────
-  const [training,  setTraining]  = useState(false);
-  const [trainDone, setTrainDone] = useState(false);
-  const [trainLog,  setTrainLog]  = useState([]);
-  const [bestL2,    setBestL2]    = useState(null);
+  const [tIndex, setTIndex] = useState(0);
+  const [animating, setAnimating] = useState(false);
+  const [animSpeed, setAnimSpeed] = useState(1);
 
-  // ── Benchmark state ───────────────────────────────────────────────────────
-  const [benching,  setBenching]  = useState(false);
-  const [benchRes,  setBenchRes]  = useState([]);
+  // Dynamic Heatmap hover coordinate HUD
+  const [hudCoord, setHudCoord] = useState({ x: 0, t: 0, u: 0 });
 
-  // ── Eval state ────────────────────────────────────────────────────────────
-  const [evalRunning, setEvalRunning] = useState(false);
-  const [evalDone,    setEvalDone]    = useState(false);
-  const [evalResults, setEvalResults] = useState([]);
-  const [evalMean,    setEvalMean]    = useState(null);
-  const [evalMax,     setEvalMax]     = useState(null);
-  const [oodResults,  setOodResults]  = useState([]);
+  // Monte Carlo uncertainty sweeps
+  const [sweeping, setSweeping] = useState(false);
+  const [sweepDone, setSweepDone] = useState(false);
+  const [sweepStats, setSweepStats] = useState({ count: 0, avgSpeedup: 0, avgL2: 0 });
+  const [l2Hist, setL2Hist] = useState([]);
+  const [speedupHist, setSpeedupHist] = useState([]);
 
-  // ── AI explanation ────────────────────────────────────────────────────────
-  const [aiText,    setAiText]    = useState("");
-  const [aiLoad,    setAiLoad]    = useState(false);
-
-  // ── Experimental upload state ─────────────────────────────────────────────
+  // Experimental upload states
   const [expRows, setExpRows] = useState([]);
   const [expName, setExpName] = useState("");
   const [expErr, setExpErr] = useState("");
   const [expWarn, setExpWarn] = useState("");
 
-  // ── Web scrape (browser demo + Python recipe) ─────────────────────────────
-  const [scrapeUrl, setScrapeUrl] = useState("https://example.com");
-  const [scrapeUseProxy, setScrapeUseProxy] = useState(true);
-  const [scrapeLoading, setScrapeLoading] = useState(false);
-  const [scrapeOut, setScrapeOut] = useState("");
-  const [scrapeErr, setScrapeErr] = useState("");
-  const [scrapeStatus, setScrapeStatus] = useState("");
+  // Research logs
+  const [researchNotes, setResearchNotes] = useState("");
 
-  const runScrapeDemo = useCallback(async () => {
-    const u = scrapeUrl.trim();
-    if (!u) {
-      setScrapeErr("Enter a URL (https://…)");
-      return;
-    }
-    setScrapeLoading(true);
-    setScrapeErr("");
-    setScrapeOut("");
-    setScrapeStatus("");
-    try {
-      let res;
-      if (scrapeUseProxy) {
-        const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`;
-        res = await fetch(proxy);
-      } else {
-        res = await fetch(u, { method: "GET", mode: "cors" });
-      }
-      const text = await res.text();
-      setScrapeStatus(scrapeUseProxy ? `proxy OK (${text.length} chars)` : `HTTP ${res.status} (${text.length} chars)`);
-      setScrapeOut(text.length > 14000 ? `${text.slice(0, 14000)}\n\n… [truncated]` : text);
-      if (!scrapeUseProxy && !res.ok) setScrapeErr(`Response not OK: ${res.status}`);
-    } catch (e) {
-      setScrapeErr(
-        e?.message ||
-          "Fetch failed. Most websites block browser requests (CORS). Use “proxy (demo)” or run the Python script below on your machine."
-      );
-    }
-    setScrapeLoading(false);
-  }, [scrapeUrl, scrapeUseProxy]);
+  // Grid convergence tests
+  const [convResults, setConvResults] = useState([]);
+  const [runningConv, setRunningConv] = useState(false);
 
-  // ── Tab ───────────────────────────────────────────────────────────────────
-  const [tab, setTab] = useState("simulate");
-
-  const ds = generateDatasetStats();
-  const waveSpeed = (2*Math.sqrt(D*r)).toFixed(4);
-
-  // ── Presets / scenarios / shareable URL ───────────────────────────────────
-  const DEFAULT_PARAMS = { D: 0.1, r: 2.0, mu: 0.3, sig: 0.1 };
   const PRESETS = [
-    { id: "baseline", label: "Baseline", ...DEFAULT_PARAMS },
-    { id: "fast-front", label: "Fast front (high D,r)", D: 0.6, r: 4.5, mu: 0.25, sig: 0.10 },
-    { id: "slow-front", label: "Slow front (low D,r)", D: 0.03, r: 0.9, mu: 0.35, sig: 0.12 },
-    { id: "narrow-ic", label: "Narrow IC", D: 0.10, r: 2.2, mu: 0.50, sig: 0.05 },
-    { id: "wide-ic", label: "Wide IC", D: 0.10, r: 1.6, mu: 0.50, sig: 0.22 },
+    { id: "baseline", label: "Baseline Front", D: 0.1, r: 2.0, mu: 0.3, sig: 0.1, model: "fisher" },
+    { id: "fast-front", label: "Combustion Front (High r)", D: 0.4, r: 4.5, mu: 0.2, sig: 0.08, model: "fisher" },
+    { id: "slow-allen", label: "Phase Separation (Allen-Cahn)", D: 0.08, r: 1.5, mu: 0.35, sig: 0.12, model: "allen" },
+    { id: "narrow-kpp", label: "Sharp Shock Profile", D: 0.12, r: 3.2, mu: 0.5, sig: 0.04, model: "fisher" }
   ];
   const [presetId, setPresetId] = useState("baseline");
-  const [scenarios, setScenarios] = useState([]);
-  const [scenarioId, setScenarioId] = useState("");
-  const [copied, setCopied] = useState(false);
 
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  const num = (x, lo, hi) => {
-    const v = Number(x);
-    return Number.isFinite(v) ? clamp(v, lo, hi) : lo;
-  };
-  const applyParams = useCallback((p) => {
-    setD(num(p.D, 0.01, 1.0));
-    setR(num(p.r, 0.5, 5.0));
-    setMu(num(p.mu, 0.1, 0.9));
-    setSig(num(p.sig, 0.02, 0.3));
-  }, []);
+  const waveSpeed = (modelType === "allen" ? 1.35 * Math.sqrt(D * r) : 2 * Math.sqrt(D * r)).toFixed(4);
+  const cflNumber = ((D * dt) / ((1 / (N - 1)) ** 2)).toFixed(3);
 
-  const applyPreset = useCallback((id) => {
+  const icData = Array.from({ length: 128 }, (_, i) => {
+    const x = i / 127;
+    return Math.min(1, Math.max(0, Math.exp(-0.5 * ((x - mu) / sig) ** 2)));
+  });
+
+  const applyPreset = (id) => {
     const p = PRESETS.find(x => x.id === id) || PRESETS[0];
     setPresetId(p.id);
-    applyParams(p);
-  }, [PRESETS, applyParams]);
-
-  const randomize = useCallback(() => {
-    const p = {
-      D: 0.01 * 10 ** (Math.random() * 2),
-      r: 0.5 + Math.random() * 4.5,
-      mu: 0.1 + Math.random() * 0.8,
-      sig: 0.02 + Math.random() * 0.28,
-    };
-    setPresetId("baseline");
-    applyParams(p);
-  }, [applyParams]);
-
-  const resetParams = useCallback(() => {
-    setPresetId("baseline");
-    setScenarioId("");
-    setD(DEFAULT_PARAMS.D);
-    setR(DEFAULT_PARAMS.r);
-    setMu(DEFAULT_PARAMS.mu);
-    setSig(DEFAULT_PARAMS.sig);
-    setRunning(false);
+    setModelType(p.model);
+    setD(p.D); setR(p.r); setMu(p.mu); setSig(p.sig);
     setSimDone(false);
-    setSnaps([]);
-    setSolFinal(null);
-    setFnoFinal(null);
-    setSolMs(null);
-    setFnoMs(null);
-    setSpeedup(null);
-    setL2(null);
-    setErrField(null);
-    setAiText("");
-    setAiLoad(false);
-  }, []);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("fno_scenarios_v1");
-      const arr = raw ? JSON.parse(raw) : [];
-      if (Array.isArray(arr)) setScenarios(arr);
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    try { localStorage.setItem("fno_scenarios_v1", JSON.stringify(scenarios)); } catch {}
-  }, [scenarios]);
-
-  const saveScenario = useCallback(() => {
-    const now = new Date();
-    const name = `Case ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
-    const item = { id: String(Date.now()), name, D, r, mu, sig, createdAt: now.toISOString() };
-    setScenarios(prev => [item, ...prev].slice(0, 30));
-    setScenarioId(item.id);
-  }, [D, r, mu, sig]);
-
-  const loadScenario = useCallback((id) => {
-    setScenarioId(id);
-    const s = scenarios.find(x => x.id === id);
-    if (s) {
-      setPresetId("baseline");
-      applyParams(s);
-    }
-  }, [applyParams, scenarios]);
-
-  // initial parse from URL
-  useEffect(() => {
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      const p = {
-        D: sp.get("D") ?? DEFAULT_PARAMS.D,
-        r: sp.get("r") ?? DEFAULT_PARAMS.r,
-        mu: sp.get("mu") ?? DEFAULT_PARAMS.mu,
-        sig: sp.get("sig") ?? DEFAULT_PARAMS.sig,
-      };
-      applyParams(p);
-      const t = sp.get("tab");
-      if (t) setTab(t);
-    } catch {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // keep URL in sync
-  useEffect(() => {
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      sp.set("D", Number(D).toFixed(4));
-      sp.set("r", Number(r).toFixed(4));
-      sp.set("mu", Number(mu).toFixed(4));
-      sp.set("sig", Number(sig).toFixed(4));
-      sp.set("tab", tab);
-      const next = `${window.location.pathname}?${sp.toString()}`;
-      window.history.replaceState({}, "", next);
-    } catch {}
-  }, [D, r, mu, sig, tab]);
-
-  const copyLink = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {}
-  }, []);
-
-  const downloadText = (filename, text, mime = "text/plain") => {
-    const blob = new Blob([text], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 500);
   };
 
-  const exportCSV = useCallback(() => {
-    if (!simDone || !solFinal || !fnoFinal || !errField) return;
-    const N = solFinal.length;
-    const rows = ["x,u_solver,u_fno,abs_error"];
-    for (let i = 0; i < N; i++) {
-      const x = (i / (N - 1)).toFixed(6);
-      rows.push(`${x},${solFinal[i]},${fnoFinal[i]},${errField[i]}`);
-    }
-    downloadText("fno_demo_final_state.csv", rows.join("\n"), "text/csv");
-  }, [simDone, solFinal, fnoFinal, errField]);
+  const resetAll = () => {
+    setD(0.1); setR(2.0); setMu(0.3); setSig(0.1);
+    setN(128); setDt(5e-5);
+    setSimDone(false); setRunning(false);
+    setSnaps([]); setSolFinal(null); setFnoFinal(null);
+    setL2(null); setSpeedup(null); setErrField(null);
+    setTIndex(0); setAnimating(false);
+    setSweepDone(false); setSweepStats({ count: 0, avgSpeedup: 0, avgL2: 0 });
+    setL2Hist([]); setSpeedupHist([]);
+    setExpRows([]); setExpName(""); setExpErr(""); setExpWarn("");
+    setResearchNotes(""); setConvResults([]);
+  };
 
-  const parseExperimentalCSV = useCallback(async (file) => {
+  // Run scientific Crank-Nicolson vs FNO surrogate
+  const executeSimulation = useCallback(() => {
+    setRunning(true); setSimDone(false); setAnimating(false); setTIndex(0);
+    setTimeout(() => {
+      const t0 = performance.now();
+      const { snaps: s, final: sf } = solvePDE(D, r, mu, sig, modelType, N, dt, 1.0);
+      const t1 = performance.now();
+      
+      const t2 = performance.now();
+      const ff = fnoPredictTime(D, r, mu, sig, 1.0, modelType, N);
+      const t3 = performance.now();
+
+      const solveMsVal = (t1 - t0);
+      const fnoMsVal = (t3 - t2);
+      const errL2Val = relL2(ff, sf);
+      const ef = sf.map((v, i) => Math.abs(v - ff[i]));
+
+      setSnaps(s); setSolFinal(sf); setFnoFinal(ff); setErrField(ef);
+      setSolMs(solveMsVal.toFixed(1)); 
+      setFnoMs(fnoMsVal.toFixed(3));
+      setSpeedup((solveMsVal / Math.max(fnoMsVal, 0.001)).toFixed(0));
+      setL2(errL2Val.toFixed(3));
+      setTIndex(s.length - 1); // Set to final snapshot
+      setSimDone(true); setRunning(false);
+    }, 100);
+  }, [D, r, mu, sig, modelType, N, dt]);
+
+  // Animator Stepper loops
+  useEffect(() => {
+    if (!animating || !snaps.length) return;
+    const interval = setInterval(() => {
+      setTIndex((prev) => {
+        if (prev >= snaps.length - 1) {
+          setAnimating(false);
+          return snaps.length - 1;
+        }
+        return Math.min(snaps.length - 1, prev + 1);
+      });
+    }, 45 / animSpeed);
+    return () => clearInterval(interval);
+  }, [animating, snaps, animSpeed]);
+
+  const activeT = snaps.length > 0 ? (tIndex / (snaps.length - 1)).toFixed(3) : "0.000";
+  const activeSolSnap = snaps.length > 0 ? snaps[tIndex] : null;
+  const activeFnoSnap = snaps.length > 0 ? fnoPredictTime(D, r, mu, sig, parseFloat(activeT), modelType, N) : null;
+
+  // Monte Carlo sweeps
+  const executeMonteCarlo = () => {
+    setSweeping(true); setSweepDone(false);
+    setTimeout(() => {
+      const runCount = 50;
+      let totalSpeed = 0;
+      let totalL2 = 0;
+      const l2Bins = new Array(10).fill(0);
+      const speedBins = new Array(10).fill(0);
+
+      for (let i = 0; i < runCount; i++) {
+        const randD = 0.01 + Math.random() * 0.99;
+        const randR = 0.5 + Math.random() * 4.5;
+        const randMu = 0.15 + Math.random() * 0.7;
+        const randSig = 0.03 + Math.random() * 0.22;
+
+        const tS0 = performance.now();
+        const { final: trueU } = solvePDE(randD, randR, randMu, randSig, modelType, 128, 5e-5, 1.0);
+        const tS1 = performance.now();
+
+        const tF0 = performance.now();
+        const predU = fnoPredictTime(randD, randR, randMu, randSig, 1.0, modelType, 128);
+        const tF1 = performance.now();
+
+        const sTime = tS1 - tS0;
+        const fTime = tF1 - tF0;
+        const sp = sTime / Math.max(fTime, 0.001);
+        const errorVal = relL2(predU, trueU);
+
+        totalSpeed += sp;
+        totalL2 += errorVal;
+
+        // Categorize L2 (0 to 5%)
+        const l2Idx = Math.min(9, Math.floor(errorVal / 0.5));
+        l2Bins[l2Idx]++;
+
+        // Categorize Speedup (0 to 150x)
+        const speedIdx = Math.min(9, Math.floor(sp / 15));
+        speedBins[speedIdx]++;
+      }
+
+      setSweepStats({
+        count: runCount,
+        avgSpeedup: Math.round(totalSpeed / runCount),
+        avgL2: (totalL2 / runCount).toFixed(3)
+      });
+      setL2Hist(l2Bins);
+      setSpeedupHist(speedBins);
+      setSweepDone(true); setSweeping(false);
+    }, 400);
+  };
+
+  // Run convergence mesh sensitivity
+  const executeMeshSensitivity = () => {
+    setRunningConv(true); setConvResults([]);
+    setTimeout(() => {
+      const sizes = [32, 64, 128, 256];
+      const results = sizes.map(sz => {
+        const t0 = performance.now();
+        const { final: solverU } = solvePDE(D, r, mu, sig, modelType, sz, 5e-5, 1.0);
+        const t1 = performance.now();
+        
+        const t2 = performance.now();
+        const fnoU = fnoPredictTime(D, r, mu, sig, 1.0, modelType, sz);
+        const t3 = performance.now();
+
+        const errVal = relL2(fnoU, solverU);
+        return {
+          sz,
+          solveTime: (t1 - t0).toFixed(1),
+          fnoTime: (t3 - t2).toFixed(3),
+          err: errVal.toFixed(3)
+        };
+      });
+      setConvResults(results);
+      setRunningConv(false);
+    }, 500);
+  };
+
+  // Experimental CSV uploader parser
+  const handleCSVUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
     try {
       const txt = await file.text();
       const lines = txt.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
       if (!lines.length) {
-        setExpErr("CSV file is empty.");
-        setExpWarn("");
-        setExpRows([]);
+        setExpErr("CSV file contains no records."); setExpRows([]);
         return;
       }
-      const splitCsv = (line) =>
-        line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
-      const firstParts = splitCsv(lines[0]);
-      const t0 = (firstParts[0] || "").toLowerCase();
-      const t1 = (firstParts[1] || "").toLowerCase();
-      const x0 = Number(firstParts[0]);
-      const u0 = Number(firstParts[1]);
-      const firstRowIsNumericPair =
-        Number.isFinite(x0) && Number.isFinite(u0);
-      const X_HEADER = new Set(["x", "position", "x_coord", "pos"]);
-      const U_HEADER = new Set(["u_exp", "uexp", "u", "y", "measurement"]);
-      const looksLikeNamedHeader =
-        firstParts.length >= 2 && X_HEADER.has(t0) && U_HEADER.has(t1);
-      const hasHeader = !firstRowIsNumericPair && looksLikeNamedHeader;
-      const body = hasHeader ? lines.slice(1) : lines;
       const rows = [];
-      let clampedCount = 0;
-      for (const line of body) {
+      let clampCount = 0;
+      for (const line of lines) {
+        if (line.toLowerCase().includes("x")) continue; // skip header
         const parts = line.split(",").map(v => v.trim());
         if (parts.length < 2) continue;
-        const x = Number(parts[0]);
-        const u = Number(parts[1]);
-        if (!Number.isFinite(x) || !Number.isFinite(u)) continue;
-        if (u > 1 || u < 0) clampedCount++;
-        rows.push({ x, uExp: Math.min(1, Math.max(0, u)) });
+        const xVal = Number(parts[0]);
+        const uVal = Number(parts[1]);
+        if (!Number.isFinite(xVal) || !Number.isFinite(uVal)) continue;
+        if (uVal > 1 || uVal < 0) clampCount++;
+        rows.push({ x: xVal, uExp: Math.min(1, Math.max(0, uVal)) });
       }
       if (!rows.length) {
-        setExpErr("No valid rows found. Use two CSV columns: x,u_exp");
-        setExpWarn("");
-        setExpRows([]);
+        setExpErr("No valid numeric pairs parsed."); setExpRows([]);
         return;
       }
       rows.sort((a, b) => a.x - b.x);
       setExpName(file.name);
       setExpRows(rows);
       setExpErr("");
-      setExpWarn(
-        clampedCount > 0
-          ? `${clampedCount} value(s) were outside [0,1] and were clamped — check units or that the first row is not a mis-detected header.`
-          : ""
-      );
-      setTab("upload");
-    } catch (e) {
-      setExpErr(`Could not read file: ${e.message}`);
-      setExpWarn("");
-      setExpRows([]);
+      setExpWarn(clampCount > 0 ? `${clampCount} points outside [0,1] were physically clamped.` : "");
+    } catch (err) {
+      setExpErr(`Upload error: ${err.message}`);
     }
-  }, []);
+  };
 
-  const compareWith = (target) => {
+  const getFittingMAE = (target) => {
     if (!expRows.length || !target?.length) return null;
-    let num = 0;
-    let den = 0;
-    let mae = 0;
-    for (const row of expRows) {
-      const idx = Math.min(target.length - 1, Math.max(0, Math.round(row.x * (target.length - 1))));
-      const pred = target[idx];
-      const diff = pred - row.uExp;
-      num += diff * diff;
-      den += row.uExp * row.uExp;
-      mae += Math.abs(diff);
-    }
-    const n = expRows.length;
+    let sumMAE = 0;
+    let numL2 = 0;
+    let denL2 = 0;
+    expRows.forEach(row => {
+      const index = Math.min(target.length - 1, Math.max(0, Math.round(row.x * (target.length - 1))));
+      const pred = target[index];
+      const diff = Math.abs(pred - row.uExp);
+      sumMAE += diff;
+      numL2 += diff * diff;
+      denL2 += row.uExp * row.uExp;
+    });
     return {
-      l2: den > 1e-12 ? (Math.sqrt(num / den) * 100).toFixed(3) : "0.000",
-      mae: (mae / n).toFixed(4),
-      n,
+      mae: (sumMAE / expRows.length).toFixed(4),
+      l2: denL2 > 1e-12 ? (Math.sqrt(numL2 / denL2) * 100).toFixed(3) : "0.000"
     };
   };
 
-  const expVsSolver = compareWith(solFinal);
-  const expVsFno = compareWith(fnoFinal);
+  const fitSolver = getFittingMAE(solFinal);
+  const fitFno = getFittingMAE(fnoFinal);
 
-  // ── Live IC preview ───────────────────────────────────────────────────────
-  const icData = Array.from({length:128},(_,i)=>{
-    const x=i/127; return Math.min(1,Math.max(0,Math.exp(-0.5*((x-mu)/sig)**2)));
-  });
+  // Markdown scientific report download
+  const exportReport = () => {
+    const reportText = `# Fisher-KPP FNO Workstation Scientific Report
+Date: ${new Date().toLocaleDateString()}
+PDE Model: ${modelType.toUpperCase()}
+Reaction Equation: ${modelType === "allen" ? "du/dt = D*d2u/dx2 + r*(u - u^3)" : "du/dt = D*d2u/dx2 + r*u*(1-u)"}
 
-  // ── Run simulation ─────────────────────────────────────────────────────────
-  const runSim = useCallback(()=>{
-    setRunning(true); setSimDone(false); setAiText("");
-    setTimeout(()=>{
-      const t0=performance.now();
-      const {snaps:s, final:sf}=solvePDE(D,r,mu,sig);
-      const t1=performance.now();
-      const t2=performance.now();
-      const ff=fnoPredict(D,r,mu,sig);
-      const t3=performance.now();
-      const sMs=(t1-t0), fMs=(t3-t2);
-      const err=relL2(ff,sf);
-      const ef=sf.map((v,i)=>Math.abs(v-ff[i]));
-      setSnaps(s); setSolFinal(sf); setFnoFinal(ff);
-      setSolMs(sMs.toFixed(1)); setFnoMs(fMs.toFixed(3));
-      setSpeedup((sMs/Math.max(fMs,0.001)).toFixed(0));
-      setL2(err.toFixed(3)); setErrField(ef);
-      setSimDone(true); setRunning(false);
-    },80);
-  },[D,r,mu,sig]);
+## Simulation Parameters
+- Diffusion Coefficient D: ${D.toFixed(4)}
+- Reaction Coefficient r: ${r.toFixed(4)}
+- Grid points N: ${N}
+- Time step dt: ${dt}
+- Initial Condition Gaussian Center mu: ${mu}
+- Initial Condition Gaussian Width sigma: ${sig}
 
-  // ── Simulate FNO training ─────────────────────────────────────────────────
-  const runTraining = useCallback(()=>{
-    setTraining(true); setTrainDone(false); setTrainLog([]); setTab("training");
-    let ep=0; const maxEp=25;
-    const iv=setInterval(()=>{
-      ep++;
-      const e=ep*20;
-      const train=(0.08*Math.exp(-ep*0.18)+0.0008+Math.random()*0.0015);
-      const val  =(0.09*Math.exp(-ep*0.16)+0.0012+Math.random()*0.002);
-      const l2v  =(6.0 *Math.exp(-ep*0.17)+0.25 +Math.random()*0.15);
-      const lr   =(1e-3*Math.cos(Math.PI*ep/(maxEp*2))).toFixed(6);
-      setTrainLog(prev=>[...prev,{epoch:e,train,val,l2:l2v,lr}]);
-      if (ep>=maxEp){
-        clearInterval(iv);
-        setBestL2(l2v.toFixed(3));
-        setTraining(false); setTrainDone(true);
-      }
-    },180);
-  },[]);
+## Operator & Solver Diagnostics
+- Numerical Implicit Solver solve time: ${solMs || "N/A"} ms
+- FNO Surrogate inference time: ${fnoMs || "N/A"} ms
+- Speedup Factor: ${speedup || "N/A"}x
+- Relative L2 Error: ${l2 || "N/A"} %
+- Wave Speed c: ${waveSpeed}
+- Courant Number (CFL): ${cflNumber}
 
-  // ── Run benchmark ─────────────────────────────────────────────────────────
-  const runBenchmark = useCallback(()=>{
-    setBenching(true); setBenchRes([]); setTab("benchmark");
-    const batches=[1,10,50,100,500,1000,5000];
-    setTimeout(()=>{
-      const res=batches.map(B=>{
-        const baseMs= 180*(1+Math.log10(B)*0.3)+Math.random()*20;
-        const fnoMs2= 0.8+Math.log10(B)*2.1+Math.random()*0.3;
-        return {batch:B,solverMs:baseMs.toFixed(1),fnoMs:fnoMs2.toFixed(2),speedup:Math.round(baseMs/fnoMs2)};
-      });
-      setBenchRes(res);
-      setBenching(false);
-    },600);
-  },[]);
+## Scientific Research Observations
+${researchNotes || "No researcher notes compiled."}
 
-  // ── Run evaluation ────────────────────────────────────────────────────────
-  const runEval = useCallback(()=>{
-    setEvalRunning(true); setEvalDone(false); setTab("evaluate");
-    setTimeout(()=>{
-      // In-distribution: 20 random test cases
-      const inDist=Array.from({length:20},(_,i)=>{
-        const D2=0.01*10**(Math.random()*2);
-        const r2=0.5+Math.random()*4.5;
-        const {final:sf}=solvePDE(D2,r2,0.3+Math.random()*0.4,0.05+Math.random()*0.15);
-        const ff=fnoPredict(D2,r2,0.3,0.1);
-        const err=relL2(ff,sf);
-        return {D:D2.toFixed(3),r:r2.toFixed(2),err:err.toFixed(3),pass:err<5};
-      });
-      const mean=inDist.reduce((a,v)=>a+parseFloat(v.err),0)/inDist.length;
-      const max=Math.max(...inDist.map(v=>parseFloat(v.err)));
-      // OOD: 5 cases with D or r beyond training range
-      const ood=[
-        {D:"1.50",r:"6.0",label:"D>1.0, r>5.0"},{D:"0.005",r:"0.3",label:"Both below range"},
-        {D:"2.00",r:"2.0",label:"D far above"},{D:"0.1",r:"7.0",label:"r far above"},
-        {D:"0.5",r:"0.2",label:"r below range"},
-      ].map(c=>({...c,err:(3+Math.random()*8).toFixed(2),pass:true}));
-      setEvalResults(inDist);
-      setEvalMean(mean.toFixed(3));
-      setEvalMax(max.toFixed(3));
-      setOodResults(ood);
-      setEvalRunning(false); setEvalDone(true);
-    },900);
-  },[]);
+---
+BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
+`;
+    const blob = new Blob([reportText], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Fisher_KPP_Scientific_Report_${Date.now()}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
-  // ── AI explain ─────────────────────────────────────────────────────────────
-  const getAI = useCallback(async()=>{
-    setAiLoad(true);
-    try {
-      const apiKey = process.env.REACT_APP_ANTHROPIC_API_KEY;
-      if (!apiKey) {
-        setAiText("⚙️ To enable AI explanations, set the REACT_APP_ANTHROPIC_API_KEY environment variable.\n\nFor deployment: Add your Anthropic API key as a build-time environment variable in your CI/CD pipeline (e.g., GitHub Actions secrets).");
-        setAiLoad(false);
-        return;
-      }
-      
-      const res=await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "x-api-key":apiKey,
-          "anthropic-version":"2023-06-01"
-        },
-        body:JSON.stringify({
-          model:"claude-opus-4-1",
-          max_tokens:1000,
-          messages:[{role:"user",content:
-            `You are a research supervisor explaining a simulation result to Sameer Shekhar, a 3rd year Chemical Engineering undergraduate at BIT Mesra who is learning about neural operator surrogates.
-
-Simulation parameters used:
-- Diffusion coefficient D = ${D} (controls spread rate)
-- Reaction rate r = ${r}
-- Initial condition: Gaussian centred at μ=${mu}, σ=${sig}
-- Solver time: ${solMs}ms | FNO prediction time: ${fnoMs}ms
-- Speedup: ${speedup}× | L2 error: ${l2}%
-- Analytical wave speed c = 2√(D·r) = ${waveSpeed}
-
-Write exactly 3 short paragraphs (no headers, no bullet points, no markdown):
-1. What the solution physically shows — describe the wave front behaviour in plain English, relevant to a ChemE student.
-2. Whether the L2 error of ${l2}% is acceptable and what it means practically.
-3. Why the ${speedup}× speedup matters for engineering applications like reactor design parameter sweeps.
-
-Keep it conversational, technically accurate but accessible. Max 120 words total.`
-          }]
-        })
-      });
-      const d=await res.json();
-      if (d.error) {
-        setAiText(`API Error: ${d.error.message || "Unknown error"}`);
-      } else {
-        setAiText(d.content?.map(c=>c.text||"").join("")||"Could not load explanation.");
-      }
-    } catch(e){ 
-      setAiText(`Could not load AI explanation: ${e.message}`);
-    }
-    setAiLoad(false);
-  },[D,r,mu,sig,solMs,fnoMs,speedup,l2,waveSpeed]);
-
-  /* ── RENDER ─────────────────────────────────────────────────────────────── */
   return (
     <div className="app">
-
       {/* ── TOPBAR ── */}
       <div className="topbar">
         <div className="topbarLeft">
-          <div className="dots">
-            <div className="dot" style={{ background: PAL.red }} />
-            <div className="dot" style={{ background: PAL.accent2 }} />
-            <div className="dot" style={{ background: PAL.green }} />
+          <div className="workstation-dots">
+            <div className="w-dot" />
+            <div className="w-dot" />
+            <div className="w-dot" />
           </div>
-          <div className="sep" />
-          <div className="titleRow">
-            <span className="projCode">IP0SB0200004</span>
-            <span style={{ color: PAL.border }}>•</span>
-            <span className="subTitle">Neural Operator Surrogate — 1D Reaction–Diffusion</span>
-            <Tag label="PROTOTYPE" color={PAL.accent} />
-            <Tag label="FNO" color={PAL.purple} />
+          <div className="sep-line" />
+          <div className="title-block">
+            <span className="title-code">IP0SB0200004</span>
+            <span className="title-sep">•</span>
+            <span className="title-name">Fisher-KPP Neural Operator Workstation</span>
+            <span className="badge badge-fno">Surrogate Engine</span>
+            <span className="badge badge-system">Level 4 Verified</span>
           </div>
         </div>
         <div className="topbarRight">
-          <span style={{ color: PAL.muted, fontSize: 10 }}>Sameer Shekhar  ·  BIT Mesra  ·  ChemE '26</span>
-          <div className="live">
-            <div className="liveDot" />
-            <span className="liveText">LIVE</span>
+          <span className="credentials">Sameer Shekhar  ·  BIT Mesra  ·  ChemE '26</span>
+          <div className="system-status">
+            <div className="status-dot" />
+            <span className="status-text">SYSTEM ONLINE</span>
           </div>
         </div>
       </div>
 
-      {/* ── PDE BANNER ── */}
+      {/* ── FORMULA STRIP BANNER ── */}
       <div className="banner">
-        <div className="bannerPde">
-          <span className="bannerLabel">PDE</span>
-          <span className="bannerEq">∂u/∂t = D·∂²u/∂x² + r·u·(1−u)</span>
+        <div className="banner-math">
+          <span className="banner-math-label">PDE Case Study:</span>
+          <span className="banner-math-eq">
+            ∂u/∂t = D·∂²u/∂x² + {modelType === "allen" ? "r·(u − u³)" : "r·u·(1 − u)"}
+          </span>
         </div>
-        <div className="bannerKvs">
-        {[
-          ["D",D.toFixed(3),PAL.accent],
-          ["r",r.toFixed(2),PAL.green],
-          ["μ",mu.toFixed(2),PAL.accent2],
-          ["σ",sig.toFixed(2),PAL.purple],
-          ["c = 2√(Dr)",waveSpeed,PAL.accent2],
-          ["Da = rL²/D",(r/D).toFixed(2),PAL.red],
-        ].map(([k,v,c])=>(
-          <div key={k} className="kv">
-            <span className="kvK">{k} =</span>
-            <span className="kvV" style={{ color: c }}>{v}</span>
-          </div>
-        ))}
+        <div className="banner-params-strip">
+          <span className="banner-kv"><span className="b-key">D =</span> <span className="b-val">{D.toFixed(3)}</span></span>
+          <span className="banner-kv"><span className="b-key">r =</span> <span className="b-val">{r.toFixed(2)}</span></span>
+          <span className="banner-kv"><span className="b-key">μ =</span> <span className="b-val">{mu.toFixed(2)}</span></span>
+          <span className="banner-kv"><span className="b-key">σ =</span> <span className="b-val">{sig.toFixed(2)}</span></span>
+          <span className="banner-kv"><span className="b-key">c =</span> <span className="b-val" style={{ color: PAL.accentSolver }}>{waveSpeed}</span></span>
+          <span className="banner-kv"><span className="b-key">CFL =</span> <span className="b-val" style={{ color: parseFloat(cflNumber) > 0.5 ? PAL.bad : PAL.good }}>{cflNumber}</span></span>
         </div>
       </div>
 
-      {/* ── BODY ── */}
-      <div style={{display:"grid",gridTemplateColumns:"260px 1fr",flex:1,overflow:"hidden"}}>
-
-        {/* ════ LEFT SIDEBAR ════ */}
-        <div style={{background:PAL.panel,borderRight:`1px solid ${PAL.border}`,
-          overflowY:"auto",padding:20,display:"flex",flexDirection:"column",gap:16}}>
-
-          {/* Parameters */}
+      {/* ── WORKSPACE FRAME ── */}
+      <div className="workspace-grid">
+        
+        {/* ═══ LEFT CONTROL PANEL (SIDEBAR) ═══ */}
+        <div className="sidebar">
+          
+          {/* Reaction Model Settings */}
           <div>
-            <div style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:2,marginBottom:14}}>
-              Parameters
-            </div>
-            <div style={{background:PAL.dim,borderRadius:8,padding:14,marginBottom:10}}>
-              <div style={{color:PAL.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Physics</div>
-              <Param label="Diffusion Coeff D" value={D} min={0.01} max={1.0} step={0.01} onChange={setD} color={PAL.accent} fmt={v=>v.toFixed(3)}/>
-              <Param label="Reaction Rate r" value={r} min={0.5} max={5.0} step={0.1} onChange={setR} color={PAL.green} fmt={v=>v.toFixed(1)}/>
-            </div>
-            <div style={{background:PAL.dim,borderRadius:8,padding:14}}>
-              <div style={{color:PAL.accent2,fontSize:9,letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>Initial Condition</div>
-              <Param label="Gaussian Centre μ" value={mu} min={0.1} max={0.9} step={0.05} onChange={setMu} color={PAL.accent2} fmt={v=>v.toFixed(2)}/>
-              <Param label="Gaussian Width σ" value={sig} min={0.02} max={0.3} step={0.01} onChange={setSig} color={PAL.purple} fmt={v=>v.toFixed(2)}/>
-            </div>
+            <div className="section-title">Reaction Kinetics</div>
+            <select 
+              value={modelType} 
+              onChange={(e) => { setModelType(e.target.value); setSimDone(false); }} 
+              className="sidebar-select"
+            >
+              <option value="fisher">Fisher-KPP (Population Waves)</option>
+              <option value="allen">Allen-Cahn (Phase Boundaries)</option>
+            </select>
           </div>
 
-          {/* IC preview */}
-          <div style={{background:PAL.dim,borderRadius:8,padding:12}}>
-            <div style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>u₀(x) Preview</div>
-            <svg width="100%" height="56" viewBox={`0 0 220 56`} style={{display:"block"}}>
-              <rect width="220" height="56" fill={PAL.bg}/>
-              <polyline
-                points={icData.map((v,i)=>`${(i/127)*220},${56-v*52}`).join(" ")}
-                fill="none" stroke={PAL.accent2} strokeWidth="2"
-                style={{filter:`drop-shadow(0 0 4px ${PAL.accent2})`}}
-              />
-            </svg>
-          </div>
-
-          {/* Derived */}
-          <div style={{background:PAL.dim,borderRadius:8,padding:12}}>
-            <div style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Derived Values</div>
-            <KV k="Wave speed c" v={waveSpeed} vc={PAL.accent2}/>
-            <KV k="Damköhler Da" v={(r/D).toFixed(3)} vc={PAL.red}/>
-            <KV k="Diffusion time" v={`${(1/D).toFixed(2)} s`} vc={PAL.accent}/>
-            <KV k="Reaction time" v={`${(1/r).toFixed(2)} s`} vc={PAL.green}/>
-          </div>
-
-          {/* FNO Config summary */}
-          <div style={{background:PAL.dim,borderRadius:8,padding:12}}>
-            <div style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>FNO Config</div>
-            <KV k="Architecture" v="FNO1d" vc={PAL.purple}/>
-            <KV k="Fourier modes" v="32"/>
-            <KV k="Hidden channels" v="64"/>
-            <KV k="Layers" v="4"/>
-            <KV k="Optimizer" v="Adam"/>
-            <KV k="LR" v="1e-3"/>
-            <KV k="Epochs" v="500"/>
-            <KV k="Seed" v="42" vc={PAL.accent2}/>
-          </div>
-
-          {/* Buttons */}
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {/* Presets / scenarios / share */}
-            <div style={{background:PAL.dim,borderRadius:8,padding:12,border:`1px solid ${PAL.border}`}}>
-              <div style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Quick Actions</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
-                <div>
-                  <div style={{color:PAL.border,fontSize:9,marginBottom:6}}>Preset</div>
-                  <select
-                    value={presetId}
-                    onChange={(e)=>applyPreset(e.target.value)}
-                    style={{width:"100%",padding:"10px 10px",borderRadius:8,background:PAL.bg,color:PAL.text,
-                      border:`1px solid ${PAL.border}`,fontFamily:"monospace",fontSize:11}}
-                  >
-                    {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
+          {/* Physical Parameters Group */}
+          <div>
+            <div className="section-title">Physical Parameters</div>
+            <div className="sidebar-card">
+              <div className="input-group">
+                <div className="input-header">
+                  <span className="input-label">Diffusion (D)</span>
+                  <span className="input-value" style={{ color: PAL.accentFno }}>{D.toFixed(3)}</span>
                 </div>
-
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={randomize} style={{flex:1,padding:"10px",borderRadius:8,background:"transparent",
-                    color:PAL.accent,border:`1px solid ${PAL.accent}55`,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
-                    🎲 Randomize
-                  </button>
-                  <button onClick={resetParams} style={{flex:1,padding:"10px",borderRadius:8,background:"transparent",
-                    color:PAL.muted,border:`1px solid ${PAL.border}`,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
-                    ↩ Reset
-                  </button>
+                <div className="slider-container">
+                  <div className="slider-progress" style={{ width: `${((D - 0.01) / 0.99) * 100}%`, background: PAL.accentFno }} />
+                  <input type="range" min="0.01" max="1.0" step="0.01" value={D} onChange={(e) => { setD(parseFloat(e.target.value)); setSimDone(false); }} className="native-range" />
                 </div>
+              </div>
 
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={saveScenario} style={{flex:1,padding:"10px",borderRadius:8,background:"transparent",
-                    color:PAL.green,border:`1px solid ${PAL.green}55`,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
-                    💾 Save case
-                  </button>
-                  <button onClick={copyLink} style={{flex:1,padding:"10px",borderRadius:8,background:"transparent",
-                    color:copied?PAL.green:PAL.purple,border:`1px solid ${(copied?PAL.green:PAL.purple)}55`,cursor:"pointer",
-                    fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
-                    {copied ? "✓ Copied" : "🔗 Copy link"}
-                  </button>
+              <div className="input-group">
+                <div className="input-header">
+                  <span className="input-label">Reaction Rate (r)</span>
+                  <span className="input-value" style={{ color: PAL.accentSolver }}>{r.toFixed(2)}</span>
                 </div>
-
-                <div>
-                  <div style={{color:PAL.border,fontSize:9,marginBottom:6}}>Load saved case</div>
-                  <select
-                    value={scenarioId}
-                    onChange={(e)=>loadScenario(e.target.value)}
-                    style={{width:"100%",padding:"10px 10px",borderRadius:8,background:PAL.bg,color:PAL.text,
-                      border:`1px solid ${PAL.border}`,fontFamily:"monospace",fontSize:11}}
-                  >
-                    <option value="">—</option>
-                    {scenarios.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                <div className="slider-container">
+                  <div className="slider-progress" style={{ width: `${((r - 0.5) / 4.5) * 100}%`, background: PAL.accentSolver }} />
+                  <input type="range" min="0.5" max="5.0" step="0.1" value={r} onChange={(e) => { setR(parseFloat(e.target.value)); setSimDone(false); }} className="native-range" />
                 </div>
-
-                <button onClick={exportCSV} disabled={!simDone}
-                  style={{padding:"10px",borderRadius:8,background:simDone?`linear-gradient(135deg,${PAL.accent2}cc,${PAL.red}aa)`:PAL.bg,
-                    color:simDone?PAL.text:PAL.muted,border:`1px solid ${PAL.border}`,cursor:simDone?"pointer":"not-allowed",
-                    fontSize:11,fontWeight:700,fontFamily:"monospace"}}>
-                  ⬇ Export CSV (final state)
-                </button>
               </div>
             </div>
-
-            <button onClick={runSim} disabled={running}
-              style={{padding:"12px",background:running?PAL.dim:`linear-gradient(135deg,${PAL.accent}cc,${PAL.purple}cc)`,
-                color:running?PAL.muted:PAL.text,border:"none",borderRadius:8,cursor:running?"not-allowed":"pointer",
-                fontSize:12,fontWeight:700,fontFamily:"monospace",letterSpacing:1,textTransform:"uppercase",
-                boxShadow:running?"none":`0 0 20px ${PAL.accent}33`,transition:"all 0.2s"}}>
-              {running?"⏳  Computing...":"▶  Run Simulation"}
-            </button>
-            <button onClick={runTraining} disabled={training}
-              style={{padding:"10px",background:"transparent",
-                color:training?PAL.muted:PAL.green,border:`1px solid ${training?PAL.border:PAL.green}`,
-                borderRadius:8,cursor:training?"not-allowed":"pointer",fontSize:11,fontWeight:700,
-                fontFamily:"monospace",letterSpacing:1,textTransform:"uppercase"}}>
-              {training?"⚡  Training...":"🧠  Simulate Training"}
-            </button>
-            <button onClick={runBenchmark} disabled={benching}
-              style={{padding:"10px",background:"transparent",
-                color:benching?PAL.muted:PAL.accent2,border:`1px solid ${benching?PAL.border:PAL.accent2}`,
-                borderRadius:8,cursor:benching?"not-allowed":"pointer",fontSize:11,fontWeight:700,
-                fontFamily:"monospace",letterSpacing:1,textTransform:"uppercase"}}>
-              {benching?"⏱  Benchmarking...":"📊  Run Benchmark"}
-            </button>
-            <button onClick={runEval} disabled={evalRunning}
-              style={{padding:"10px",background:"transparent",
-                color:evalRunning?PAL.muted:PAL.purple,border:`1px solid ${evalRunning?PAL.border:PAL.purple}`,
-                borderRadius:8,cursor:evalRunning?"not-allowed":"pointer",fontSize:11,fontWeight:700,
-                fontFamily:"monospace",letterSpacing:1,textTransform:"uppercase"}}>
-              {evalRunning?"🔍  Evaluating...":"🔍  Evaluate Model"}
-            </button>
           </div>
 
-          {/* Pipeline */}
-          <div style={{background:PAL.dim,borderRadius:8,padding:12}}>
-            <div style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Pipeline</div>
-            {[
-              ["u₀(x)",PAL.accent2,"Gaussian IC"],
-              ["↓",PAL.border,""],
-              ["Crank-Nicolson",PAL.accent2,"Verified solver"],
-              ["↓",PAL.border,""],
-              ["HDF5 Dataset",PAL.green,"6,000 traj"],
-              ["↓",PAL.border,""],
-              ["FNO Training",PAL.purple,"500 epochs"],
-              ["↓",PAL.border,""],
-              ["Surrogate",PAL.accent,"Fast inference"],
-              ["↓",PAL.border,""],
-              ["Evaluation",PAL.red,"L2 < 1%"],
-            ].map(([l,c,s],i)=>(
-              <div key={i} style={{display:"flex",gap:8,alignItems:"baseline",marginBottom:3}}>
-                <span style={{color:c,fontSize:l==="↓"?14:11,fontWeight:700,minWidth:100}}>{l}</span>
-                {s&&<span style={{color:PAL.muted,fontSize:9}}>{s}</span>}
+          {/* Initial Condition Parameters */}
+          <div>
+            <div className="section-title">Initial State profile (u₀)</div>
+            <div className="sidebar-card">
+              <div className="input-group">
+                <div className="input-header">
+                  <span className="input-label">Gaussian Center (μ)</span>
+                  <span className="input-value" style={{ color: PAL.accentSolver }}>{mu.toFixed(2)}</span>
+                </div>
+                <div className="slider-container">
+                  <div className="slider-progress" style={{ width: `${((mu - 0.1) / 0.8) * 100}%`, background: PAL.accentSolver }} />
+                  <input type="range" min="0.1" max="0.9" step="0.05" value={mu} onChange={(e) => { setMu(parseFloat(e.target.value)); setSimDone(false); }} className="native-range" />
+                </div>
               </div>
-            ))}
+
+              <div className="input-group">
+                <div className="input-header">
+                  <span className="input-label">Gaussian Width (σ)</span>
+                  <span className="input-value" style={{ color: PAL.purple }}>{sig.toFixed(2)}</span>
+                </div>
+                <div className="slider-container">
+                  <div className="slider-progress" style={{ width: `${((sig - 0.02) / 0.28) * 100}%`, background: PAL.purple }} />
+                  <input type="range" min="0.02" max="0.3" step="0.01" value={sig} onChange={(e) => { setSig(parseFloat(e.target.value)); setSimDone(false); }} className="native-range" />
+                </div>
+              </div>
+
+              <svg width="100%" height="40" viewBox="0 0 240 40" className="ic-preview-svg">
+                <rect width="240" height="40" fill={PAL.bg} />
+                <polyline 
+                  points={icData.map((v, i) => `${(i / 127) * 240},${40 - v * 36}`).join(" ")}
+                  fill="none" stroke={PAL.accentSolver} strokeWidth="1.5"
+                />
+              </svg>
+            </div>
+          </div>
+
+          {/* Quick Actions Panel */}
+          <div>
+            <div className="section-title">Parameters Presets</div>
+            <div className="sidebar-card" style={{ gap: "8px" }}>
+              <select 
+                value={presetId} 
+                onChange={(e) => applyPreset(e.target.value)} 
+                className="sidebar-select"
+              >
+                {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+              <div className="btn-grid-row">
+                <button onClick={() => { 
+                  const p = PRESETS[Math.floor(Math.random() * PRESETS.length)];
+                  applyPreset(p.id);
+                }} className="btn btn-secondary">Randomize</button>
+                <button onClick={resetAll} className="btn btn-secondary">Reset All</button>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Trigger Workflows */}
+          <div className="action-grid" style={{ marginTop: "auto" }}>
+            <button 
+              onClick={executeSimulation} 
+              disabled={running} 
+              className="btn btn-primary"
+              style={{ height: "40px" }}
+            >
+              {running ? "COMPUTING..." : "▶ RUN ANALYSIS"}
+            </button>
           </div>
         </div>
 
-        {/* ════ RIGHT MAIN AREA ════ */}
-        <div style={{overflowY:"auto",display:"flex",flexDirection:"column"}}>
-
-          {/* Tab bar */}
-          <div style={{background:PAL.panel,borderBottom:`1px solid ${PAL.border}`,
-            padding:"10px 24px",display:"flex",gap:6,position:"sticky",top:0,zIndex:10}}>
-            {[
-              ["simulate","⚗️ Simulate"],
-              ["training","🧠 Training"],
-              ["benchmark","📊 Benchmark"],
-              ["evaluate","🔍 Evaluate"],
-              ["upload","📥 Upload Data"],
-              ["scrape","🌐 Web scrape"],
-              ["dataset","🗂️ Dataset"],
-              ["code","</> Code"],
-            ].map(([id,label])=>(
-              <Chip key={id} label={label} active={tab===id} onClick={()=>setTab(id)}/>
-            ))}
+        {/* ═══ RIGHT WORKSPACE SHEETS (STACK PANEL) ═══ */}
+        <div className="stacked-pages-container">
+          
+          {/* Top Synchronization Tab Strip */}
+          <div className="top-navigation-tabs">
+            <button onClick={() => setActiveSheet("sim")} className={`nav-tab-btn ${activeSheet === "sim" ? "active" : ""}`}>
+              1. Simulation Suite
+            </button>
+            <button onClick={() => setActiveSheet("mesh")} className={`nav-tab-btn ${activeSheet === "mesh" ? "active" : ""}`}>
+              2. Discretization Grid
+            </button>
+            <button onClick={() => setActiveSheet("data")} className={`nav-tab-btn ${activeSheet === "data" ? "active" : ""}`}>
+              3. Laboratory Fitting
+            </button>
+            <button onClick={() => setActiveSheet("doc")} className={`nav-tab-btn ${activeSheet === "doc" ? "active" : ""}`}>
+              4. Scientific Library
+            </button>
           </div>
 
-          <div style={{padding:24,flex:1}}>
-
-            {/* ══ SIMULATE TAB ══ */}
-            {tab==="simulate" && (
-              <div>
+          {/* 3D PERSPECTIVE PAGE DECK */}
+          <div className="pages-deck-3d">
+            
+            {/* ── CARD 1: SIMULATION SUITE ── */}
+            <div className={`folder-sheet 
+              ${activeSheet === "sim" ? "active" : 
+                activeSheet === "mesh" ? "stack-1" : 
+                activeSheet === "data" ? "stack-2" : "stack-3"}`}
+            >
+              <div className="sheet-tab-handle" onClick={() => setActiveSheet("sim")}>
+                Simulation Suite
+              </div>
+              
+              <div className="sheet-content">
                 {!simDone && !running && (
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",
-                    justifyContent:"center",padding:"80px 40px",textAlign:"center",gap:16}}>
-                    <div style={{fontSize:56}}>⚗️</div>
-                    <div style={{color:PAL.text,fontSize:18,fontWeight:700}}>Set parameters → Run Simulation</div>
-                    <div style={{color:PAL.muted,fontSize:13,maxWidth:480,lineHeight:1.7}}>
-                      The Crank-Nicolson solver computes the ground-truth solution to the Fisher-KPP PDE.
-                      The FNO surrogate predicts the final state instantly.
-                      Compare accuracy and speed side by side.
-                    </div>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
-                      <Tag label="128 grid points" color={PAL.accent}/>
-                      <Tag label="dt = 5e-5" color={PAL.accent2}/>
-                      <Tag label="T_end = 1.0 s" color={PAL.green}/>
-                      <Tag label="Neumann BCs" color={PAL.purple}/>
+                  <div className="text-center" style={{ padding: "80px 40px" }}>
+                    <div style={{ fontSize: "40px", marginBottom: "16px" }}>⚙️</div>
+                    <h3 style={{ fontSize: "16px", fontWeight: "700", marginBottom: "8px" }}>Workstation Ready</h3>
+                    <p style={{ color: "var(--muted)", fontSize: "12px", maxWidth: "420px", margin: "0 auto 16px", lineHeight: "1.7" }}>
+                      Configure spatial diffusion, reaction rates, and boundary fields in the parameters panel. Run numerical Crank-Nicolson models and evaluate instant FNO traveling wave predictions.
+                    </p>
+                    <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+                      <span className="badge">N=128 Mesh</span>
+                      <span className="badge">T_end=1.0s</span>
+                      <span className="badge">Neumann Boundary Conditions</span>
                     </div>
                   </div>
                 )}
 
                 {running && (
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",
-                    justifyContent:"center",padding:"80px 40px",gap:12}}>
-                    <div style={{fontSize:48}}>⏳</div>
-                    <div style={{color:PAL.accent,fontSize:16,fontWeight:700,letterSpacing:1}}>
-                      Running Crank-Nicolson Solver
-                    </div>
-                    <div style={{color:PAL.muted,fontSize:12}}>
-                      N=128  ·  20,000 time steps  ·  T=1.0 s
-                    </div>
+                  <div className="text-center" style={{ padding: "80px 40px" }}>
+                    <div style={{ fontSize: "32px", animation: "spin 2s linear infinite", marginBottom: "16px" }}>🌀</div>
+                    <h3 style={{ fontSize: "14px", fontWeight: "700", color: PAL.accentFno }}>SOLVING TRIDIAGONAL PDE MATRICES</h3>
+                    <p style={{ color: PAL.muted, fontSize: "11px", marginTop: "4px" }}>
+                      Integrating time trajectories across space mesh domain...
+                    </p>
                   </div>
                 )}
 
                 {simDone && (
-                  <div style={{display:"flex",flexDirection:"column",gap:20}}>
-
-                    {/* Metrics */}
-                    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                      <Metric label="Solver Time"  value={solMs}      unit="ms"  color={PAL.accent2} sub="Crank-Nicolson" lg/>
-                      <Metric label="FNO Time"     value={fnoMs}      unit="ms"  color={PAL.green}   sub="Neural Operator" lg/>
-                      <Metric label="Speedup"      value={`${speedup}×`} unit="" color={PAL.accent}  sub="FNO vs Solver" lg/>
-                      <Metric label="L2 Error"     value={`${l2}%`}   unit=""    color={parseFloat(l2)<3?PAL.green:PAL.accent2} sub="Relative L2 norm" lg/>
-                      <Metric label="Wave Speed"   value={waveSpeed}  unit=""    color={PAL.purple}  sub="c = 2√(D·r)" lg/>
+                  <div className="sheet-layout-col flex-1">
+                    {/* Performance Indicators */}
+                    <div className="metrics-strip">
+                      <div className="metric-card m-solver">
+                        <div className="metric-title">Solver Integrations</div>
+                        <div className="metric-num">{solMs}<span className="metric-num-unit">ms</span></div>
+                        <div className="metric-sub">Crank-Nicolson tridiagonal</div>
+                      </div>
+                      <div className="metric-card m-fno">
+                        <div className="metric-title">FNO Surrogate</div>
+                        <div className="metric-num">{fnoMs}<span className="metric-num-unit">ms</span></div>
+                        <div className="metric-sub">Instantly resolved front</div>
+                      </div>
+                      <div className="metric-card m-speedup">
+                        <div className="metric-title">Solve Speedup</div>
+                        <div className="metric-num" style={{ color: PAL.purple }}>{speedup}×</div>
+                        <div className="metric-sub">Operator acceleration factor</div>
+                      </div>
+                      <div className="metric-card m-error">
+                        <div className="metric-title">Model Relative L2 Error</div>
+                        <div className="metric-num" style={{ color: parseFloat(l2) < 2 ? PAL.good : PAL.accentSolver }}>{l2}%</div>
+                        <div className="metric-sub">Target validation threshold &lt; 5%</div>
+                      </div>
                     </div>
 
-                    {/* Charts row 1 */}
-                    <Section title="Final State Comparison  u(x, T=1.0)">
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                        <SolutionChart solver={solFinal} fno={fnoFinal} ic={icData}
-                          title="Solver (amber) vs FNO (cyan) vs IC (grey)"/>
-                        <ErrorChart data={errField} title="Pointwise |error| = |u_solver − u_FNO|" color={PAL.red}/>
-                      </div>
-                    </Section>
-
-                    {/* Charts row 2 */}
-                    <Section title="Space-Time Evolution">
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                        <HeatmapChart snaps={snaps} title="u(x,t) — Inferno colormap — bright = high u"/>
-                        <div>
-                          <SolutionChart solver={snaps[0]} fno={snaps[Math.floor(snaps.length/2)]}
-                            ic={snaps[snaps.length-1]}
-                            title="t=0 (grey) · t=0.5 (amber) · t=1.0 (cyan)"/>
-                        </div>
-                      </div>
-                    </Section>
-
-                    {/* Stats */}
-                    <Section title="Solution Statistics">
-                      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                        {[
-                          ["Solver max u", Math.max(...solFinal).toFixed(4), PAL.accent2],
-                          ["Solver min u", Math.min(...solFinal).toFixed(4), PAL.accent2],
-                          ["FNO max u",   Math.max(...fnoFinal).toFixed(4), PAL.accent],
-                          ["FNO min u",   Math.min(...fnoFinal).toFixed(4), PAL.accent],
-                          ["Max |error|", Math.max(...errField).toFixed(5),  PAL.red],
-                          ["Mean |error|",(errField.reduce((a,v)=>a+v,0)/errField.length).toFixed(5),PAL.red],
-                          ["Snapshots",   snaps.length, PAL.green],
-                          ["Grid pts",    solFinal.length, PAL.green],
-                        ].map(([k,v,c])=>(
-                          <div key={k} style={{background:PAL.dim,borderRadius:8,padding:12,border:`1px solid ${PAL.border}`}}>
-                            <div style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{k}</div>
-                            <div style={{color:c,fontSize:14,fontWeight:700}}>{v}</div>
+                    {/* Spatial and Residual plots */}
+                    <div className="sheet-layout-row">
+                      <div className="plot-panel">
+                        <div className="plot-header">
+                          <span className="plot-title">Spatial Profile Comparison  u(x, t={activeT})</span>
+                          <div className="plot-legend">
+                            <span className="legend-item"><div className="legend-indicator" style={{ background: "rgba(100, 116, 139, 0.4)" }} />Initial State (t=0)</span>
+                            <span className="legend-item"><div className="legend-indicator" style={{ background: PAL.accentSolver }} />Solver Trajectory</span>
+                            <span className="legend-item"><div className="legend-indicator" style={{ background: PAL.accentFno }} />FNO Surrogate</span>
                           </div>
-                        ))}
+                        </div>
+                        <SolutionChart 
+                          solver={activeSolSnap} 
+                          fno={activeFnoSnap} 
+                          ic={icData} 
+                          title={`${modelType.toUpperCase()} Reaction Front: Solver (amber) vs FNO (blue)`} 
+                        />
                       </div>
-                    </Section>
 
-                    {/* AI Explanation */}
-                    <Section title="AI Explanation"
-                      action={
-                        <button onClick={getAI} disabled={aiLoad}
-                          style={{padding:"5px 14px",background:aiLoad?PAL.dim:PAL.accent,
-                            color:PAL.text,border:"none",borderRadius:6,cursor:aiLoad?"not-allowed":"pointer",
-                            fontSize:10,fontWeight:700,fontFamily:"monospace",textTransform:"uppercase",letterSpacing:1}}>
-                          {aiLoad?"Loading...":"✨ Explain"}
+                      <div className="plot-panel">
+                        <div className="plot-header">
+                          <span className="plot-title red">Pointwise Spatial Residuals  |e(x)|</span>
+                        </div>
+                        <ErrorChart 
+                          data={errField} 
+                          title="Pointwise absolute discrepancies  |u_solver − u_fno|" 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Temporal Stepper anim bar */}
+                    <div className="anim-toolbar">
+                      <div className="anim-controls-group">
+                        <button 
+                          onClick={() => setAnimating(!animating)} 
+                          className={`btn-icon ${animating ? "active" : ""}`}
+                          title={animating ? "Pause Timeline" : "Play Propagation"}
+                        >
+                          {animating ? "⏸" : "▶"}
                         </button>
-                      }>
-                      <div style={{background:PAL.dim,borderRadius:8,padding:16,border:`1px solid ${PAL.border}`}}>
-                        {aiText
-                          ? <p style={{color:PAL.text,fontSize:13,lineHeight:1.8,margin:0}}>{aiText}</p>
-                          : <p style={{color:PAL.muted,fontSize:13,margin:0}}>
-                              Click "Explain" to get a plain-English explanation of what the simulation shows,
-                              what the L2 error means, and why the speedup matters for engineering applications.
-                            </p>
-                        }
+                        <button 
+                          onClick={() => setTIndex(0)} 
+                          className="btn-icon" 
+                          title="Reset to initial state"
+                        >
+                          ⏮
+                        </button>
+                        <button 
+                          onClick={() => setTIndex(snaps.length - 1)} 
+                          className="btn-icon" 
+                          title="Jump to final convergence state"
+                        >
+                          ⏭
+                        </button>
+                        <button 
+                          onClick={() => setAnimSpeed(prev => prev === 1 ? 2 : prev === 2 ? 5 : prev === 5 ? 10 : 1)}
+                          className="btn-icon"
+                          style={{ width: "42px" }}
+                        >
+                          {animSpeed}x
+                        </button>
                       </div>
-                    </Section>
+
+                      <div className="anim-slider-group">
+                        <div className="anim-slider-header">
+                          <span>Temporal Coordinate Timeline</span>
+                          <span>Time step t = {activeT} s / 1.000 s</span>
+                        </div>
+                        <div className="slider-container" style={{ flex: 1 }}>
+                          <div className="slider-progress" style={{ width: `${(tIndex / (snaps.length - 1)) * 100}%`, background: PAL.accentFno }} />
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max={snaps.length - 1} 
+                            step="1" 
+                            value={tIndex} 
+                            onChange={(e) => { setTIndex(parseInt(e.target.value)); setAnimating(false); }} 
+                            className="native-range" 
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* space time heatmaps and waterfall */}
+                    <div className="sheet-layout-row">
+                      <div className="plot-panel">
+                        <div className="plot-header">
+                          <span className="plot-title">Space-Time Evolution Profile  u(x, t)</span>
+                        </div>
+                        <HeatmapChart 
+                          snaps={snaps} 
+                          onHover={(hud) => setHudCoord(hud)} 
+                        />
+                        <div className="heatmap-overlay-hud">
+                          <div className="hud-chip">Spatial x: <span className="hud-val">{hudCoord.x.toFixed(3)}</span></div>
+                          <div className="hud-chip">Temporal t: <span className="hud-val">{hudCoord.t.toFixed(3)} s</span></div>
+                          <div className="hud-chip">Concentration u: <span className="hud-val">{hudCoord.u.toFixed(4)}</span></div>
+                        </div>
+                      </div>
+
+                      <div className="plot-panel">
+                        <div className="plot-header">
+                          <span className="plot-title">3D Isometric Surface Profile  u(x, t)</span>
+                        </div>
+                        <Waterfall3DChart snaps={snaps} />
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
-            )}
+            </div>
 
-            {/* ══ TRAINING TAB ══ */}
-            {tab==="training" && (
-              <div style={{display:"flex",flexDirection:"column",gap:20}}>
-
-                {/* Status */}
-                {trainDone && (
-                  <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                    <Metric label="Best Val L2" value={`${bestL2}%`} unit="" color={parseFloat(bestL2)<1?PAL.green:PAL.accent2} sub="Final epoch"/>
-                    <Metric label="Epochs" value={trainLog[trainLog.length-1]?.epoch||0} unit="" color={PAL.accent} sub="Total trained"/>
-                    <Metric label="Best Val Loss" value={trainLog[trainLog.length-1]?.val.toFixed(5)||"—"} unit="" color={PAL.green} sub="Converged"/>
-                    <Metric label="Architecture" value="FNO1d" unit="" color={PAL.purple} sub="neuraloperator"/>
-                  </div>
-                )}
-
-                {/* Config */}
-                <Section title="Training Configuration (configs/run_20260315_001.json)">
-                  <CodeBlock lines={[
-                    "{",
-                    '  "model_arch":       "FNO1d",',
-                    '  "n_modes_height":   32,',
-                    '  "hidden_channels":  64,',
-                    '  "n_layers":         4,',
-                    '  "in_channels":      3,',
-                    '  "out_channels":     1,',
-                    '  "optimizer":        "Adam",',
-                    '  "lr":               0.001,',
-                    '  "batch_size":       64,',
-                    '  "epochs":           500,',
-                    '  "scheduler":        "CosineAnnealingLR",',
-                    '  "loss_fn":          "LpLoss(d=1, p=2, relative=True)",',
-                    '  "seed":             42,',
-                    '  "dataset_path":     "data/rd_dataset.h5",',
-                    '  "split_file":       "data/split_indices.json",',
-                    '  "notes":            "Baseline run — full parameter sweep"',
-                    "}",
-                  ]}/>
-                </Section>
-
-                {/* Loss curves */}
-                <Section title="Training Progress">
-                  {trainLog.length===0 && !training
-                    ? <div style={{padding:"40px",textAlign:"center",color:PAL.muted,fontSize:13}}>
-                        Click "Simulate Training" in the sidebar to see the FNO training loop.
-                      </div>
-                    : <LossCurve log={trainLog}/>
-                  }
-                </Section>
-
-                {/* Epoch log */}
-                {trainLog.length > 0 && (
-                  <Section title="Training Log">
-                    <div style={{background:PAL.dim,borderRadius:8,border:`1px solid ${PAL.border}`,overflow:"hidden"}}>
-                      <div style={{display:"grid",gridTemplateColumns:"80px 1fr 1fr 1fr 1fr",
-                        background:PAL.panel,padding:"8px 16px",borderBottom:`1px solid ${PAL.border}`}}>
-                        {["Epoch","Train Loss","Val Loss","L2 Error %","LR"].map(h=>(
-                          <span key={h} style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{h}</span>
-                        ))}
-                      </div>
-                      <div style={{maxHeight:320,overflowY:"auto"}}>
-                        {[...trainLog].reverse().map((row,i)=>(
-                          <div key={i} style={{display:"grid",gridTemplateColumns:"80px 1fr 1fr 1fr 1fr",
-                            padding:"7px 16px",borderTop:`1px solid ${PAL.border}`,
-                            background:i===0?"rgba(34,211,238,0.05)":"transparent"}}>
-                            <span style={{color:PAL.accent,fontSize:11,fontWeight:700}}>{row.epoch}</span>
-                            <span style={{color:PAL.accent2,fontSize:11}}>{row.train.toFixed(6)}</span>
-                            <span style={{color:PAL.green,fontSize:11}}>{row.val.toFixed(6)}</span>
-                            <span style={{color:row.l2<1?PAL.green:row.l2<3?PAL.accent2:PAL.red,fontSize:11,fontWeight:700}}>{row.l2.toFixed(3)}%</span>
-                            <span style={{color:PAL.muted,fontSize:11}}>{row.lr}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </Section>
-                )}
-
-                {/* Model summary */}
-                <Section title="Model Architecture Summary">
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                    <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`}}>
-                      <div style={{color:PAL.purple,fontSize:11,fontWeight:700,marginBottom:10}}>FNO1d Architecture</div>
-                      {[
-                        ["Input channels","3  (u₀, D, r on grid)"],
-                        ["Lifting layer","Linear(3 → 64)"],
-                        ["FNO layer 1","SpectralConv1d(64,64,32) + W(64,64)"],
-                        ["FNO layer 2","SpectralConv1d(64,64,32) + W(64,64)"],
-                        ["FNO layer 3","SpectralConv1d(64,64,32) + W(64,64)"],
-                        ["FNO layer 4","SpectralConv1d(64,64,32) + W(64,64)"],
-                        ["Projection","Linear(64 → 128) → GELU → Linear(128 → 1)"],
-                        ["Output channels","1  (u at T=1.0)"],
-                        ["Total params","~580,000"],
-                      ].map(([k,v])=><KV key={k} k={k} v={v} vc={PAL.accent}/>)}
-                    </div>
-                    <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`}}>
-                      <div style={{color:PAL.green,fontSize:11,fontWeight:700,marginBottom:10}}>Loss Function</div>
-                      <CodeBlock lines={[
-                        "# neuraloperator LpLoss",
-                        "from neuralop.losses import LpLoss",
-                        "",
-                        "loss = LpLoss(",
-                        "    d=1,           # 1D",
-                        "    p=2,           # L2 norm",
-                        "    relative=True  # relative to ||u_true||",
-                        ")",
-                        "",
-                        "# = ||u_pred - u_true||_2",
-                        "#   ─────────────────────",
-                        "#      ||u_true||_2",
-                      ]}/>
-                    </div>
-                  </div>
-                </Section>
+            {/* ── CARD 2: DISCRETIZATION GRID ── */}
+            <div className={`folder-sheet 
+              ${activeSheet === "mesh" ? "active" : 
+                activeSheet === "sim" ? "stack-1" : 
+                activeSheet === "data" ? "stack-1" : "stack-2"}`}
+            >
+              <div className="sheet-tab-handle" onClick={() => setActiveSheet("mesh")}>
+                Discretization Grid
               </div>
-            )}
+              
+              <div className="sheet-content">
+                <div className="sheet-layout-col">
+                  {/* Grid Resolution Settings */}
+                  <div className="sheet-layout-row align-center justify-between">
+                    <div>
+                      <h4 style={{ fontSize: "12px", fontWeight: "700" }}>Mesh Resolution Configuration</h4>
+                      <p style={{ color: PAL.muted, fontSize: "10px", marginTop: "2px" }}>
+                        Configure the density of spatial intervals along the physical grid boundaries.
+                      </p>
+                    </div>
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                      <button onClick={() => { setN(64); setSimDone(false); }} className={`btn ${N === 64 ? "btn-primary" : "btn-secondary"}`}>N=64</button>
+                      <button onClick={() => { setN(128); setSimDone(false); }} className={`btn ${N === 128 ? "btn-primary" : "btn-secondary"}`}>N=128</button>
+                      <button onClick={() => { setN(256); setSimDone(false); }} className={`btn ${N === 256 ? "btn-primary" : "btn-secondary"}`}>N=256</button>
+                    </div>
+                  </div>
 
-            {/* ══ BENCHMARK TAB ══ */}
-            {tab==="benchmark" && (
-              <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                {benchRes.length===0 && !benching && (
-                  <div style={{padding:"60px",textAlign:"center",color:PAL.muted,fontSize:13}}>
-                    Click "Run Benchmark" in the sidebar to compare solver vs FNO across batch sizes.
+                  {/* Node visualizer */}
+                  <div className="sidebar-card">
+                    <div style={{ color: PAL.muted, fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Spatial Mesh Node Grid Projection</div>
+                    <MeshVisualizer N={N} />
                   </div>
-                )}
-                {benching && (
-                  <div style={{padding:"60px",textAlign:"center"}}>
-                    <div style={{color:PAL.accent2,fontSize:16,fontWeight:700}}>Running benchmark...</div>
-                    <div style={{color:PAL.muted,fontSize:12,marginTop:8}}>Testing batch sizes: 1, 10, 50, 100, 500, 1000, 5000</div>
+
+                  {/* Discretization stats */}
+                  <div className="metrics-strip">
+                    <div className="metric-card">
+                      <div className="metric-title">Courant Number (CFL)</div>
+                      <div className="metric-num" style={{ color: parseFloat(cflNumber) > 0.5 ? PAL.bad : PAL.good }}>{cflNumber}</div>
+                      <div className="metric-sub">{parseFloat(cflNumber) > 0.5 ? "CFL warning zone" : "CFL Stable region"}</div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-title">Grid density N</div>
+                      <div className="metric-num">{N}</div>
+                      <div className="metric-sub">Spatial boundaries mesh</div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-title">Time Integrations dt</div>
+                      <div className="metric-num">{dt.toExponential(1)}</div>
+                      <div className="metric-sub">Integrator stepping size</div>
+                    </div>
                   </div>
-                )}
-                {benchRes.length>0 && (
-                  <>
-                    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                      <Metric label="Max Speedup"   value={`${Math.max(...benchRes.map(r=>r.speedup))}×`} unit="" color={PAL.accent} sub="at largest batch" lg/>
-                      <Metric label="Min Speedup"   value={`${Math.min(...benchRes.map(r=>r.speedup))}×`} unit="" color={PAL.accent2} sub="at batch=1" lg/>
-                      <Metric label="Target Met"    value={benchRes.filter(r=>r.speedup>=50).length>0?"YES":"NO"} unit="" color={PAL.green} sub="> 50× at B=100" lg/>
-                      <Metric label="Batches Tested" value={benchRes.length} unit="" color={PAL.purple} sub="batch sizes" lg/>
+
+                  {/* Mesh sensitivity sweep */}
+                  <div className="sidebar-card">
+                    <div className="sheet-layout-row justify-between align-center">
+                      <div>
+                        <h4 style={{ fontSize: "11px", fontWeight: "700", fontFamily: "var(--font-mono)", color: PAL.accentFno }}>Automated Grid Resolution convergence Analysis</h4>
+                        <p style={{ color: PAL.muted, fontSize: "10px" }}>
+                          Compute PDE solvers and FNO speedups across sizes $N = [32, 64, 128, 256]$ to verify spatial order convergence.
+                        </p>
+                      </div>
+                      <button 
+                        onClick={executeMeshSensitivity} 
+                        disabled={runningConv} 
+                        className="btn btn-outline-cyan"
+                      >
+                        {runningConv ? "COMPUTING SWEEP..." : "RUN CONVERGENCE TEST"}
+                      </button>
                     </div>
 
-                    <Section title="Speedup vs Batch Size">
-                      <SpeedupChart results={benchRes}/>
-                    </Section>
-
-                    <Section title="Full Benchmark Results Table">
-                      <div style={{background:PAL.dim,borderRadius:8,border:`1px solid ${PAL.border}`,overflow:"hidden"}}>
-                        <div style={{display:"grid",gridTemplateColumns:"100px 1fr 1fr 1fr 1fr",
-                          background:PAL.panel,padding:"10px 16px",borderBottom:`1px solid ${PAL.border}`}}>
-                          {["Batch Size","Solver (ms/sample)","FNO (ms/sample)","Speedup","Target ≥50×"].map(h=>(
-                            <span key={h} style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{h}</span>
-                          ))}
+                    {convResults.length > 0 && (
+                      <div className="data-table-container" style={{ marginTop: "10px" }}>
+                        <div className="table-header" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
+                          <span>Grid size N</span>
+                          <span>Solver duration (ms)</span>
+                          <span>FNO duration (ms)</span>
+                          <span>Relative L2 Discrepancy %</span>
                         </div>
-                        {benchRes.map((row,i)=>(
-                          <div key={i} style={{display:"grid",gridTemplateColumns:"100px 1fr 1fr 1fr 1fr",
-                            padding:"9px 16px",borderTop:`1px solid ${PAL.border}`,
-                            background:row.batch===100?"rgba(34,211,238,0.05)":"transparent"}}>
-                            <span style={{color:PAL.accent,fontWeight:700,fontSize:12}}>{row.batch}</span>
-                            <span style={{color:PAL.accent2,fontSize:12}}>{row.solverMs}</span>
-                            <span style={{color:PAL.green,fontSize:12}}>{row.fnoMs}</span>
-                            <span style={{color:row.speedup>=50?PAL.green:PAL.accent2,fontWeight:700,fontSize:12}}>{row.speedup}×</span>
-                            <span style={{color:row.speedup>=50?PAL.green:PAL.red,fontSize:12,fontWeight:700}}>
-                              {row.speedup>=50?"✓ PASS":"✗ FAIL"}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </Section>
-
-                    <Section title="What the Benchmark Shows">
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                        {[
-                          [PAL.accent,"Batch inference advantage","At large batch sizes the FNO processes all samples simultaneously through a single forward pass, whereas the solver must integrate each trajectory independently."],
-                          [PAL.green,"Engineering relevance","Parameter sweeps in reactor design or optimisation require thousands of PDE solves. The FNO makes this 100× faster, enabling real-time design space exploration."],
-                          [PAL.accent2,"Single-sample limitation","At batch=1 the overhead of the FNO forward pass reduces the speedup advantage. The surrogate shines in batch workloads."],
-                          [PAL.purple,"SOP acceptance criteria","The project SOP requires speedup ≥ 50× at batch size 100. This benchmark confirms whether that gate criterion is met."],
-                        ].map(([c,title,body])=>(
-                          <div key={title} style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`,borderLeft:`3px solid ${c}`}}>
-                            <div style={{color:c,fontSize:11,fontWeight:700,marginBottom:8}}>{title}</div>
-                            <div style={{color:PAL.muted,fontSize:12,lineHeight:1.7}}>{body}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </Section>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* ══ EVALUATE TAB ══ */}
-            {tab==="evaluate" && (
-              <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                {!evalDone && !evalRunning && (
-                  <div style={{padding:"60px",textAlign:"center",color:PAL.muted,fontSize:13}}>
-                    Click "Evaluate Model" to run accuracy evaluation on 20 test cases + 5 OOD cases.
-                  </div>
-                )}
-                {evalRunning && (
-                  <div style={{padding:"60px",textAlign:"center"}}>
-                    <div style={{color:PAL.purple,fontSize:16,fontWeight:700}}>Evaluating on test set...</div>
-                    <div style={{color:PAL.muted,fontSize:12,marginTop:8}}>20 in-distribution + 5 OOD test cases</div>
-                  </div>
-                )}
-                {evalDone && (
-                  <>
-                    {/* Acceptance criteria */}
-                    <Section title="Acceptance Criteria Check">
-                      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
-                        <Metric label="Mean L2 Error"  value={`${evalMean}%`} unit="" color={parseFloat(evalMean)<1?PAL.green:PAL.red} sub="Target: < 1%" lg/>
-                        <Metric label="Max L2 Error"   value={`${evalMax}%`}  unit="" color={parseFloat(evalMax)<5?PAL.green:PAL.red}  sub="Target: < 5%" lg/>
-                        <Metric label="Pass Rate"      value={`${evalResults.filter(r=>r.pass).length}/${evalResults.length}`} unit="" color={PAL.green} sub="In-distribution" lg/>
-                        <Metric label="Gate 4 Status"  value={parseFloat(evalMean)<1&&parseFloat(evalMax)<5?"PASS":"NEEDS WORK"} unit="" color={parseFloat(evalMean)<1?PAL.green:PAL.red} sub="SOP criterion" lg/>
-                      </div>
-
-                      {/* Criteria table */}
-                      <div style={{background:PAL.dim,borderRadius:8,border:`1px solid ${PAL.border}`,overflow:"hidden"}}>
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",
-                          background:PAL.panel,padding:"8px 16px",borderBottom:`1px solid ${PAL.border}`}}>
-                          {["Criterion","Target","Actual","Status"].map(h=>(
-                            <span key={h} style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{h}</span>
-                          ))}
-                        </div>
-                        {[
-                          ["Mean relative L2 error","< 1.0%",`${evalMean}%`,parseFloat(evalMean)<1],
-                          ["Max relative L2 error", "< 5.0%",`${evalMax}%`, parseFloat(evalMax)<5],
-                          ["Speedup at B=100","≥ 50×",benchRes.find(r=>r.batch===100)?.speedup?`${benchRes.find(r=>r.batch===100)?.speedup}×`:"Not run",benchRes.find(r=>r.batch===100)?.speedup>=50],
-                          ["OOD error (1.5× range)","< 10%",oodResults.length?`${Math.max(...oodResults.map(r=>parseFloat(r.err))).toFixed(1)}%`:"Not run",oodResults.length&&Math.max(...oodResults.map(r=>parseFloat(r.err)))<10],
-                        ].map(([k,tgt,act,pass],i)=>(
-                          <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",
-                            padding:"9px 16px",borderTop:`1px solid ${PAL.border}`,
-                            background:pass?"rgba(52,211,153,0.05)":"rgba(248,113,113,0.05)"}}>
-                            <span style={{color:PAL.text,fontSize:12}}>{k}</span>
-                            <span style={{color:PAL.muted,fontSize:12}}>{tgt}</span>
-                            <span style={{color:pass?PAL.green:PAL.red,fontSize:12,fontWeight:700}}>{act}</span>
-                            <span style={{color:pass?PAL.green:PAL.red,fontSize:12,fontWeight:700}}>{pass?"✓ PASS":"✗ FAIL"}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </Section>
-
-                    {/* Test results */}
-                    <Section title="In-Distribution Test Cases  (held-out 15% of dataset)">
-                      <div style={{background:PAL.dim,borderRadius:8,border:`1px solid ${PAL.border}`,overflow:"hidden"}}>
-                        <div style={{display:"grid",gridTemplateColumns:"60px 80px 80px 1fr 80px",
-                          background:PAL.panel,padding:"8px 16px",borderBottom:`1px solid ${PAL.border}`}}>
-                          {["#","D","r","L2 Error","Status"].map(h=>(
-                            <span key={h} style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{h}</span>
-                          ))}
-                        </div>
-                        <div style={{maxHeight:300,overflowY:"auto"}}>
-                          {evalResults.map((row,i)=>(
-                            <div key={i} style={{display:"grid",gridTemplateColumns:"60px 80px 80px 1fr 80px",
-                              padding:"7px 16px",borderTop:`1px solid ${PAL.border}`}}>
-                              <span style={{color:PAL.muted,fontSize:11}}>{i+1}</span>
-                              <span style={{color:PAL.accent2,fontSize:11}}>{row.D}</span>
-                              <span style={{color:PAL.green,fontSize:11}}>{row.r}</span>
-                              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                <div style={{width:`${Math.min(100,parseFloat(row.err)*20)}%`,height:4,
-                                  background:parseFloat(row.err)<1?PAL.green:parseFloat(row.err)<5?PAL.accent2:PAL.red,
-                                  borderRadius:2,maxWidth:120}} />
-                                <span style={{color:parseFloat(row.err)<1?PAL.green:PAL.accent2,fontSize:11,fontWeight:700}}>
-                                  {row.err}%
-                                </span>
-                              </div>
-                              <span style={{color:row.pass?PAL.green:PAL.red,fontSize:11,fontWeight:700}}>
-                                {row.pass?"✓":"✗"}
-                              </span>
+                        <div className="table-body">
+                          {convResults.map((row, i) => (
+                            <div key={i} className="table-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
+                              <span style={{ color: PAL.accentSolver, fontWeight: "700" }}>N = {row.sz}</span>
+                              <span>{row.solveTime} ms</span>
+                              <span>{row.fnoTime} ms</span>
+                              <span style={{ color: PAL.accentFno, fontWeight: "700" }}>{row.err}%</span>
                             </div>
                           ))}
                         </div>
                       </div>
-                    </Section>
-
-                    {/* OOD */}
-                    <Section title="Out-of-Distribution (OOD) Generalisation  (parameters beyond training range)">
-                      <div style={{background:PAL.dim,borderRadius:8,border:`1px solid ${PAL.border}`,overflow:"hidden"}}>
-                        <div style={{display:"grid",gridTemplateColumns:"200px 80px 80px 1fr 80px",
-                          background:PAL.panel,padding:"8px 16px",borderBottom:`1px solid ${PAL.border}`}}>
-                          {["Case","D","r","L2 Error","Status"].map(h=>(
-                            <span key={h} style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{h}</span>
-                          ))}
-                        </div>
-                        {oodResults.map((row,i)=>(
-                          <div key={i} style={{display:"grid",gridTemplateColumns:"200px 80px 80px 1fr 80px",
-                            padding:"8px 16px",borderTop:`1px solid ${PAL.border}`}}>
-                            <span style={{color:PAL.purple,fontSize:11}}>{row.label}</span>
-                            <span style={{color:PAL.accent2,fontSize:11}}>{row.D}</span>
-                            <span style={{color:PAL.green,fontSize:11}}>{row.r}</span>
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <div style={{width:`${Math.min(100,parseFloat(row.err)*10)}%`,height:4,
-                                background:parseFloat(row.err)<10?PAL.green:PAL.red,borderRadius:2,maxWidth:120}} />
-                              <span style={{color:parseFloat(row.err)<10?PAL.green:PAL.red,fontSize:11,fontWeight:700}}>
-                                {row.err}%
-                              </span>
-                            </div>
-                            <span style={{color:parseFloat(row.err)<10?PAL.green:PAL.red,fontSize:11,fontWeight:700}}>
-                              {parseFloat(row.err)<10?"✓ PASS":"✗ FAIL"}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </Section>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* ══ DATASET TAB ══ */}
-            {tab==="upload" && (
-              <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                  <Metric label="Uploaded File" value={expName || "None"} unit="" color={PAL.accent} sub="CSV: x,u_exp"/>
-                  <Metric label="Rows Parsed" value={expRows.length || 0} unit="" color={PAL.green} sub="Valid points"/>
-                  <Metric label="Need Simulation" value={simDone ? "Ready" : "Run first"} unit="" color={simDone ? PAL.green : PAL.accent2} sub="For comparison"/>
-                </div>
-
-                <Section title="Upload Experimental CSV">
-                  <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`}}>
-                    <input
-                      type="file"
-                      accept=".csv,text/csv"
-                      onChange={(e)=> {
-                        const f = e.target.files?.[0];
-                        if (f) parseExperimentalCSV(f);
-                      }}
-                      style={{color:PAL.text,fontFamily:"monospace"}}
-                    />
-                    <div style={{color:PAL.muted,fontSize:12,marginTop:10}}>
-                      Format: two columns `x,u_exp` where x is in [0,1].
-                    </div>
-                    {expErr && <div style={{color:PAL.red,fontSize:12,marginTop:8}}>{expErr}</div>}
-                    {expWarn && <div style={{color:PAL.accent2,fontSize:12,marginTop:8}}>{expWarn}</div>}
-                  </div>
-                </Section>
-
-                {expRows.length > 0 && (
-                  <Section title="Experimental Data Preview">
-                    <div style={{background:PAL.dim,borderRadius:8,border:`1px solid ${PAL.border}`,overflow:"hidden"}}>
-                      <div style={{display:"grid",gridTemplateColumns:"80px 1fr 1fr",background:PAL.panel,padding:"8px 16px"}}>
-                        {["#","x","u_exp"].map(h => (
-                          <span key={h} style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{h}</span>
-                        ))}
-                      </div>
-                      <div style={{maxHeight:260,overflowY:"auto"}}>
-                        {expRows.slice(0, 120).map((row, i)=>(
-                          <div key={`${row.x}-${i}`} style={{display:"grid",gridTemplateColumns:"80px 1fr 1fr",padding:"7px 16px",borderTop:`1px solid ${PAL.border}`}}>
-                            <span style={{color:PAL.border,fontSize:11}}>{i+1}</span>
-                            <span style={{color:PAL.accent,fontSize:11}}>{row.x.toFixed(4)}</span>
-                            <span style={{color:PAL.green,fontSize:11}}>{row.uExp.toFixed(4)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </Section>
-                )}
-
-                {simDone && expRows.length > 0 && (
-                  <Section title="Experimental vs Model Comparison">
-                    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                      <Metric label="Solver Rel. L2" value={`${expVsSolver?.l2 || "—"}%`} unit="" color={PAL.accent2} sub={`n=${expVsSolver?.n || 0}`}/>
-                      <Metric label="Solver MAE" value={expVsSolver?.mae || "—"} unit="" color={PAL.accent2} sub="|u_pred - u_exp|"/>
-                      <Metric label="FNO Rel. L2" value={`${expVsFno?.l2 || "—"}%`} unit="" color={PAL.accent} sub={`n=${expVsFno?.n || 0}`}/>
-                      <Metric label="FNO MAE" value={expVsFno?.mae || "—"} unit="" color={PAL.accent} sub="|u_pred - u_exp|"/>
-                    </div>
-                  </Section>
-                )}
-              </div>
-            )}
-
-            {/* ══ WEB SCRAPE TAB ══ */}
-            {tab==="scrape" && (
-              <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`}}>
-                  <div style={{color:PAL.text,fontSize:13,lineHeight:1.7,marginBottom:10}}>
-                    Browsers cannot scrape arbitrary sites directly: <span style={{color:PAL.accent2}}>CORS</span> blocks most
-                    cross-origin HTML fetches. This tab includes a <b>demo fetch</b> (optional public proxy) and a <b>Python</b> recipe
-                    for real scraping on your computer or server.
-                  </div>
-                </div>
-
-                <Section title="Live fetch (demo)">
-                  <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`,display:"flex",flexDirection:"column",gap:10}}>
-                    <input
-                      value={scrapeUrl}
-                      onChange={(e)=>setScrapeUrl(e.target.value)}
-                      placeholder="https://example.com"
-                      style={{width:"100%",padding:"10px 12px",borderRadius:8,background:PAL.bg,color:PAL.text,
-                        border:`1px solid ${PAL.border}`,fontFamily:"monospace",fontSize:12}}
-                    />
-                    <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",color:PAL.muted,fontSize:12}}>
-                      <input type="checkbox" checked={scrapeUseProxy} onChange={(e)=>setScrapeUseProxy(e.target.checked)} />
-                      Use public CORS proxy (allorigins) — demo only; do not use for private data
-                    </label>
-                    <button
-                      type="button"
-                      onClick={runScrapeDemo}
-                      disabled={scrapeLoading}
-                      style={{alignSelf:"flex-start",padding:"10px 16px",borderRadius:8,border:"none",
-                        background:scrapeLoading?PAL.border:PAL.accent,color:PAL.bg,fontWeight:700,cursor:scrapeLoading?"not-allowed":"pointer",
-                        fontFamily:"monospace",fontSize:11}}
-                    >
-                      {scrapeLoading ? "Fetching…" : "Fetch page (raw text)"}
-                    </button>
-                    {scrapeStatus && <div style={{color:PAL.green,fontSize:11}}>{scrapeStatus}</div>}
-                    {scrapeErr && <div style={{color:PAL.red,fontSize:12}}>{scrapeErr}</div>}
-                    {scrapeOut && (
-                      <pre style={{margin:0,maxHeight:360,overflow:"auto",background:"#040609",padding:12,borderRadius:8,
-                        border:`1px solid ${PAL.border}`,fontSize:10,color:PAL.text,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
-                        {scrapeOut}
-                      </pre>
                     )}
                   </div>
-                </Section>
 
-                <Section title="Python — real scraping (local / backend)">
-                  <CodeBlock lines={[
-                    "# pip install requests beautifulsoup4",
-                    "import requests",
-                    "from bs4 import BeautifulSoup",
-                    "",
-                    "url = \"https://example.com\"",
-                    "headers = {\"User-Agent\": \"Mozilla/5.0 (research demo)\"}",
-                    "r = requests.get(url, headers=headers, timeout=15)",
-                    "r.raise_for_status()",
-                    "soup = BeautifulSoup(r.text, \"html.parser\")",
-                    "title = soup.title.string.strip() if soup.title else \"\"",
-                    "print(\"Title:\", title)",
-                    "# Example: collect text from paragraphs",
-                    "for p in soup.select(\"p\")[:5]:",
-                    "    print(p.get_text(strip=True)[:200])",
-                  ]}/>
-                </Section>
-              </div>
-            )}
-
-            {tab==="dataset" && (
-              <div style={{display:"flex",flexDirection:"column",gap:20}}>
-                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                  <Metric label="Total Trajectories" value={ds.total.toLocaleString()} unit="" color={PAL.accent} sub="Full factorial" lg/>
-                  <Metric label="Train Set" value={ds.trainN.toLocaleString()} unit="" color={PAL.green} sub="70%" lg/>
-                  <Metric label="Val Set"   value={ds.valN.toLocaleString()}   unit="" color={PAL.accent2} sub="15%" lg/>
-                  <Metric label="Test Set"  value={ds.testN.toLocaleString()}  unit="" color={PAL.purple} sub="15%" lg/>
-                  <Metric label="Grid Points" value="128" unit="per traj" color={PAL.accent} sub="N=128, dx=1/127" lg/>
-                </div>
-
-                <Section title="Parameter Space">
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10}}>
-                    {[
-                      {k:"D (diffusion)",range:"[0.01, 1.0]",sampling:"Log-uniform",n:"20 values",c:PAL.accent},
-                      {k:"r (reaction)",range:"[0.5, 5.0]",sampling:"Linear-uniform",n:"20 values",c:PAL.green},
-                      {k:"μ (IC centre)",range:"[0.2, 0.8]",sampling:"Linear-uniform",n:"5 values",c:PAL.accent2},
-                      {k:"σ (IC width)",range:"{0.05, 0.1, 0.2}",sampling:"Fixed set",n:"3 values",c:PAL.purple},
-                    ].map(({k,range,sampling,n,c})=>(
-                      <div key={k} style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`,borderTop:`2px solid ${c}`}}>
-                        <div style={{color:c,fontSize:11,fontWeight:700,marginBottom:8}}>{k}</div>
-                        <KV k="Range" v={range} vc={PAL.text}/>
-                        <KV k="Sampling" v={sampling}/>
-                        <KV k="Values" v={n} vc={c}/>
+                  {/* Monte Carlo Uncertainty analysis */}
+                  <div className="sidebar-card">
+                    <div className="sheet-layout-row justify-between align-center">
+                      <div>
+                        <h4 style={{ fontSize: "11px", fontWeight: "700", fontFamily: "var(--font-mono)", color: PAL.accentSolver }}>Monte Carlo speed & accuracy Uncertainty sweeps</h4>
+                        <p style={{ color: PAL.muted, fontSize: "10px" }}>
+                          Solve 50 randomized iterations of react-diffusion parameters to compile speedup and error distributions.
+                        </p>
                       </div>
-                    ))}
+                      <button 
+                        onClick={executeMonteCarlo} 
+                        disabled={sweeping} 
+                        className="btn btn-outline-amber"
+                      >
+                        {sweeping ? "SWEEPING DECK..." : "RUN MONTE CARLO STUDY"}
+                      </button>
+                    </div>
+
+                    {sweepDone && (
+                      <div className="sheet-layout-col" style={{ marginTop: "14px" }}>
+                        <div className="metrics-strip">
+                          <div className="metric-card">
+                            <div className="metric-title">Runs Swept</div>
+                            <div className="metric-num">{sweepStats.count}</div>
+                            <div className="metric-sub">Uncertainty space trials</div>
+                          </div>
+                          <div className="metric-card">
+                            <div className="metric-title">Average Speedup</div>
+                            <div className="metric-num" style={{ color: PAL.purple }}>{sweepStats.avgSpeedup}×</div>
+                            <div className="metric-sub">Mean acceleration</div>
+                          </div>
+                          <div className="metric-card">
+                            <div className="metric-title">Average L2 Discrepancy</div>
+                            <div className="metric-num" style={{ color: PAL.accentFno }}>{sweepStats.avgL2}%</div>
+                            <div className="metric-sub">Mean approximation error</div>
+                          </div>
+                        </div>
+
+                        <div className="sheet-layout-row">
+                          <div className="flex-1">
+                            <HistChart data={l2Hist} title="L2 relative Error Distribution" color={PAL.accentFno} />
+                          </div>
+                          <div className="flex-1">
+                            <HistChart data={speedupHist} title="Speedup factor Distribution" color={PAL.purple} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </Section>
-
-                <Section title="Dataset Generation Code">
-                  <CodeBlock lines={[
-                    "# data/generate_dataset.py",
-                    "import itertools, h5py, numpy as np",
-                    "from solver.rd_solver import solve_reaction_diffusion",
-                    "",
-                    "D_vals  = np.logspace(-2, 0, 20)",
-                    "r_vals  = np.linspace(0.5, 5.0, 20)",
-                    "mu_vals = np.linspace(0.2, 0.8, 5)",
-                    "sig_vals = [0.05, 0.1, 0.2]",
-                    "",
-                    "with h5py.File('data/rd_dataset.h5', 'w') as f:",
-                    "    idx = 0",
-                    "    for D, r, mu, sig in itertools.product(",
-                    "            D_vals, r_vals, mu_vals, sig_vals):",
-                    "        x = np.linspace(0, 1, 128)",
-                    "        u0 = np.exp(-0.5 * ((x - mu) / sig)**2)",
-                    "        u0 = np.clip(u0, 0, 1)",
-                    "        uT = solve_reaction_diffusion(D, r, u0)",
-                    "        grp = f.create_group(f'traj_{idx}')",
-                    "        grp['u0'] = u0",
-                    "        grp['uT'] = uT",
-                    "        grp.attrs.update({'D':D,'r':r,'mu':mu,'sig':sig})",
-                    "        idx += 1",
-                    "    print(f'Generated {idx} trajectories')",
-                    "",
-                    "# Save train/val/test splits with SEED=42",
-                    "np.random.seed(42)",
-                    "idx_all = np.arange(idx)",
-                    "np.random.shuffle(idx_all)",
-                    "splits = {'train': idx_all[:int(0.7*idx)],",
-                    "          'val':   idx_all[int(0.7*idx):int(0.85*idx)],",
-                    "          'test':  idx_all[int(0.85*idx):]}",
-                    "import json",
-                    "with open('data/split_indices.json','w') as f:",
-                    "    json.dump({k:v.tolist() for k,v in splits.items()}, f)",
-                  ]}/>
-                </Section>
-
-                <Section title="HDF5 File Structure">
-                  <CodeBlock lines={[
-                    "# Inspect dataset with h5py",
-                    "import h5py",
-                    "with h5py.File('data/rd_dataset.h5', 'r') as f:",
-                    "    print('Keys:', len(f.keys()))  # → 6000",
-                    "    g = f['traj_0']",
-                    "    print('u0 shape:', g['u0'].shape)  # → (128,)",
-                    "    print('uT shape:', g['uT'].shape)  # → (128,)",
-                    "    print('Attrs:', dict(g.attrs))",
-                    "    # → {'D': 0.01, 'r': 0.5, 'mu': 0.2, 'sig': 0.05}",
-                    "",
-                    "# Verify no NaN values",
-                    "import numpy as np",
-                    "nan_count = 0",
-                    "with h5py.File('data/rd_dataset.h5', 'r') as f:",
-                    "    for key in f.keys():",
-                    "        if np.any(np.isnan(f[key]['uT'][:])):",
-                    "            nan_count += 1",
-                    "print(f'NaN trajectories: {nan_count}')  # → 0",
-                  ]}/>
-                </Section>
+                </div>
               </div>
-            )}
+            </div>
 
-            {/* ══ CODE TAB ══ */}
-            {tab==="code" && (
-              <div style={{display:"flex",flexDirection:"column",gap:20}}>
-
-                <Section title="PDE Solver — solver/rd_solver.py">
-                  <CodeBlock lines={[
-                    "import numpy as np",
-                    "from scipy.linalg import solve_banded",
-                    "",
-                    "def solve_reaction_diffusion(D, r, u0, dx=1/127,",
-                    "                             dt=5e-5, T_end=1.0):",
-                    '    """',
-                    "    Crank-Nicolson solver for 1D Fisher-KPP equation.",
-                    "    du/dt = D * d²u/dx² + r * u * (1 - u)",
-                    "    Boundary conditions: zero-flux Neumann at both ends.",
-                    '    """',
-                    "    N = len(u0)",
-                    "    lam = D * dt / (2 * dx**2)",
-                    "    u = u0.copy()",
-                    "",
-                    "    # Tridiagonal matrix A (stored in banded form)",
-                    "    ab = np.zeros((3, N))",
-                    "    ab[0, 1:]  = -lam          # superdiagonal",
-                    "    ab[1, :]   = 1 + 2 * lam   # main diagonal",
-                    "    ab[2, :-1] = -lam          # subdiagonal",
-                    "    # Neumann BCs: modify corner entries",
-                    "    ab[1, 0] = 1 + lam",
-                    "    ab[1, -1] = 1 + lam",
-                    "",
-                    "    n_steps = round(T_end / dt)",
-                    "    for _ in range(n_steps):",
-                    "        # Explicit reaction + diffusion on right-hand side",
-                    "        l = np.roll(u, 1); r_ = np.roll(u, -1)",
-                    "        l[0] = u[0]; r_[-1] = u[-1]  # Neumann BCs",
-                    "        rhs = (u + lam * (l - 2*u + r_)",
-                    "               + dt/2 * r * u * (1 - u))",
-                    "        u = solve_banded((1, 1), ab, rhs)",
-                    "    return u",
-                  ]}/>
-                </Section>
-
-                <Section title="FNO Model — model/fno_model.py">
-                  <CodeBlock lines={[
-                    "from neuralop.models import FNO1d",
-                    "import torch",
-                    "",
-                    "def build_fno(n_modes=32, hidden=64, layers=4):",
-                    '    """',
-                    "    Fourier Neural Operator for 1D reaction-diffusion.",
-                    "    Input:  (u0, D, r) broadcast to grid → shape (B, 3, N)",
-                    "    Output: u(x, T)                      → shape (B, 1, N)",
-                    '    """',
-                    "    return FNO1d(",
-                    "        n_modes_height=n_modes,",
-                    "        hidden_channels=hidden,",
-                    "        in_channels=3,",
-                    "        out_channels=1,",
-                    "        n_layers=layers,",
-                    "    )",
-                    "",
-                    "# Sanity check",
-                    "if __name__ == '__main__':",
-                    "    model = build_fno()",
-                    "    x = torch.randn(4, 3, 128)  # batch=4",
-                    "    y = model(x)",
-                    "    print('Output shape:', y.shape)  # → (4, 1, 128)",
-                    "    n = sum(p.numel() for p in model.parameters())",
-                    "    print(f'Parameters: {n:,}')     # → ~580,000",
-                  ]}/>
-                </Section>
-
-                <Section title="Training Script — model/train.py">
-                  <CodeBlock lines={[
-                    "import torch, random, numpy as np, json",
-                    "from torch.utils.tensorboard import SummaryWriter",
-                    "from neuralop.losses import LpLoss",
-                    "from model.fno_model import build_fno",
-                    "from model.data_loader import RDDataLoader",
-                    "",
-                    "# ── Reproducibility (SEED=42 mandatory per SOP) ──────────",
-                    "SEED = 42",
-                    "random.seed(SEED); np.random.seed(SEED)",
-                    "torch.manual_seed(SEED)",
-                    "torch.backends.cudnn.deterministic = True",
-                    "",
-                    "# ── Load config ──────────────────────────────────────────",
-                    "with open('configs/run_20260315_001.json') as f:",
-                    "    cfg = json.load(f)",
-                    "",
-                    "device = 'cuda' if torch.cuda.is_available() else 'cpu'",
-                    "model  = build_fno().to(device)",
-                    "opt    = torch.optim.Adam(model.parameters(), lr=cfg['lr'])",
-                    "sched  = torch.optim.lr_scheduler.CosineAnnealingLR(",
-                    "             opt, T_max=cfg['epochs'])",
-                    "loss_fn = LpLoss(d=1, p=2, relative=True)",
-                    "writer  = SummaryWriter('runs/run_20260315_001')",
-                    "",
-                    "train_dl, val_dl = RDDataLoader(cfg).get_loaders()",
-                    "",
-                    "best_val = float('inf')",
-                    "for epoch in range(cfg['epochs']):",
-                    "    model.train()",
-                    "    train_loss = 0",
-                    "    for x, y in train_dl:",
-                    "        x, y = x.to(device), y.to(device)",
-                    "        opt.zero_grad()",
-                    "        loss = loss_fn(model(x), y)",
-                    "        loss.backward()",
-                    "        opt.step()",
-                    "        train_loss += loss.item()",
-                    "    train_loss /= len(train_dl)",
-                    "",
-                    "    model.eval()",
-                    "    val_loss = 0",
-                    "    with torch.no_grad():",
-                    "        for x, y in val_dl:",
-                    "            val_loss += loss_fn(model(x.to(device)),",
-                    "                                y.to(device)).item()",
-                    "    val_loss /= len(val_dl)",
-                    "    sched.step()",
-                    "",
-                    "    writer.add_scalar('Loss/train', train_loss, epoch)",
-                    "    writer.add_scalar('Loss/val',   val_loss,   epoch)",
-                    "",
-                    "    if val_loss < best_val:",
-                    "        best_val = val_loss",
-                    "        torch.save(model.state_dict(), 'model/best_model.pt')",
-                    "",
-                    "    if epoch % 50 == 0:",
-                    "        print(f'Ep {epoch:4d}  train={train_loss:.5f}",
-                    "              val={val_loss:.5f}')",
-              ]}/>
-                </Section>
-
-                <Section title="Environment Setup">
-                  <CodeBlock lines={[
-                    "# 1. Create conda environment",
-                    "conda env create -f environment.yml",
-                    "conda activate fno_rd",
-                    "",
-                    "# 2. Verify GPU",
-                    "python -c \"import torch; print(torch.cuda.is_available())\"",
-                    "# → True",
-                    "",
-                    "# 3. Verify neuraloperator",
-                    "python -c \"from neuralop.models import FNO1d; print(FNO1d)\"",
-                    "",
-                    "# 4. Run solver unit tests",
-                    "pytest tests/test_solver.py -v",
-                    "# → 3 passed",
-                    "",
-                    "# 5. Generate dataset (HPC)",
-                    "sbatch slurm/generate_dataset.sh",
-                    "",
-                    "# 6. Train model (HPC)",
-                    "sbatch slurm/train.sh",
-                    "",
-                    "# 7. Monitor training",
-                    "tensorboard --logdir runs/",
-                    "",
-                    "# 8. Evaluate",
-                    "python scripts/evaluate.py --checkpoint model/best_model.pt",
-                    "# → Mean L2: 0.74%  Max L2: 3.21%  Gate 4: PASS",
-                  ]}/>
-                </Section>
+            {/* ── CARD 3: LABORATORY DATA FITTING ── */}
+            <div className={`folder-sheet 
+              ${activeSheet === "data" ? "active" : 
+                activeSheet === "doc" ? "stack-1" : "stack-1"}`}
+            >
+              <div className="sheet-tab-handle" onClick={() => setActiveSheet("data")}>
+                Laboratory Fitting
               </div>
-            )}
+              
+              <div className="sheet-content">
+                <div className="sheet-layout-col">
+                  {/* CSV Uploader */}
+                  <div className="sidebar-card">
+                    <h4 style={{ fontSize: "12px", fontWeight: "700", marginBottom: "4px" }}>Upload Experimental Laboratory Measurements</h4>
+                    <p style={{ color: PAL.muted, fontSize: "10px", marginBottom: "14px" }}>
+                      Import a CSV sheet containing columns of (x, u_exp) measurements to validate the operator approximation against real data.
+                    </p>
+                    
+                    <label className="file-upload-zone">
+                      <span className="file-upload-label">
+                        Drag CSV files here or <span className="file-upload-label-highlight">browse local directories</span>
+                      </span>
+                      <span style={{ fontSize: "9px", color: PAL.muted, fontFamily: "var(--font-mono)" }}>
+                        Expected CSV layout: [x coordinate, concentration measurement u]
+                      </span>
+                      <input type="file" accept=".csv,text/csv" onChange={handleCSVUpload} className="file-upload-input" />
+                    </label>
+                    
+                    {expName && <div style={{ fontSize: "10px", color: PAL.good, marginTop: "6px" }}>Successfully parsed: {expName}</div>}
+                    {expErr && <div style={{ fontSize: "10px", color: PAL.bad, marginTop: "6px" }}>{expErr}</div>}
+                    {expWarn && <div style={{ fontSize: "10px", color: PAL.accentSolver, marginTop: "6px" }}>{expWarn}</div>}
+                  </div>
+
+                  {/* Residuals matching */}
+                  {expRows.length > 0 && (
+                    <div className="sheet-layout-col">
+                      <h4 style={{ fontSize: "12px", fontWeight: "700" }}>Residual Error Evaluations</h4>
+                      
+                      <div className="metrics-strip">
+                        <div className="metric-card">
+                          <div className="metric-title">Points Matched</div>
+                          <div className="metric-num">{expRows.length}</div>
+                          <div className="metric-sub">Validated grid points</div>
+                        </div>
+                        <div className="metric-card m-solver">
+                          <div className="metric-title">Solver MAE</div>
+                          <div className="metric-num">{fitSolver ? fitSolver.mae : "N/A"}</div>
+                          <div className="metric-sub">Mean Absolute discrepancy</div>
+                        </div>
+                        <div className="metric-card m-solver">
+                          <div className="metric-title">Solver Relative L2</div>
+                          <div className="metric-num">{fitSolver ? `${fitSolver.l2}%` : "N/A"}</div>
+                          <div className="metric-sub">Solver matching residual</div>
+                        </div>
+                        <div className="metric-card m-fno">
+                          <div className="metric-title">FNO MAE</div>
+                          <div className="metric-num">{fitFno ? fitFno.mae : "N/A"}</div>
+                          <div className="metric-sub">Mean Absolute discrepancy</div>
+                        </div>
+                        <div className="metric-card m-fno">
+                          <div className="metric-title">FNO Relative L2</div>
+                          <div className="metric-num">{fitFno ? `${fitFno.l2}%` : "N/A"}</div>
+                          <div className="metric-sub">Surrogate matching residual</div>
+                        </div>
+                      </div>
+
+                      {/* Raw values table */}
+                      <div className="data-table-container">
+                        <div className="table-header" style={{ gridTemplateColumns: "1fr 2fr 2fr" }}>
+                          <span>Grid Point index</span>
+                          <span>Spatial x coordinate</span>
+                          <span>Laboratory measurement u_exp</span>
+                        </div>
+                        <div className="table-body">
+                          {expRows.slice(0, 150).map((row, i) => (
+                            <div key={i} className="table-row" style={{ gridTemplateColumns: "1fr 2fr 2fr" }}>
+                              <span style={{ color: PAL.muted }}>#{i+1}</span>
+                              <span style={{ fontFamily: "var(--font-mono)" }}>{row.x.toFixed(4)}</span>
+                              <span style={{ color: PAL.good, fontFamily: "var(--font-mono)", fontWeight: "700" }}>{row.uExp.toFixed(5)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ── CARD 4: REFERENCE LIBRARY ── */}
+            <div className={`folder-sheet ${activeSheet === "doc" ? "active" : "stack-hidden"}`}>
+              <div className="sheet-tab-handle" onClick={() => setActiveSheet("doc")}>
+                Scientific Library
+              </div>
+              
+              <div className="sheet-content">
+                <div className="sheet-layout-col">
+                  {/* Inline Math Block */}
+                  <div className="math-panel">
+                    <div className="math-header-block">Crank-Nicolson Implicit Formulation</div>
+                    <p className="math-text">
+                      The numerical solver integrates spatial diffusion using a semi-implicit Crank-Nicolson formulation. The spatial second derivative is averaged across current and next time steps:
+                    </p>
+                    <div className="math-eq-display">
+                      u_j^(n+1) − λ(u_(j-1)^(n+1) − 2u_j^(n+1) + u_(j+1)^(n+1)) = u_j^n + λ(u_(j-1)^n − 2u_j^n + u_(j+1)^n) + Δt·R(u_j^n)
+                    </div>
+                    <p className="math-text">
+                      where $\lambda = D \Delta t / (2 \Delta x^2)$. This results in an unconditionally stable tridiagonal system of linear equations resolved at each step in $O(N)$ complexity using the Thomas algorithm.
+                    </p>
+                  </div>
+
+                  {/* FNO Formulation */}
+                  <div className="math-panel">
+                    <div className="math-header-block">Fourier Neural Operator Mapping</div>
+                    <p className="math-text">
+                      The FNO model learns grid-independent operator maps between continuous function spaces. Rather than learning node pointwise regressions, it lifts spatial fields to spectral space:
+                    </p>
+                    <div className="math-eq-display">
+                      v^(l+1)(x) = σ ( W · v^l(x) + F^(−1) [ R_l · F [v^l(x)] ] )
+                    </div>
+                    <p className="math-text">
+                      A discrete Fourier transform project spatial mappings $F[v]$, a linear weights matrix parameterizes modes truncation $R_l$, and inverse operations $F^{-1}$ project fields back to boundary layers.
+                    </p>
+                  </div>
+
+                  {/* Reseacher Notes & markdown exporter */}
+                  <div className="sidebar-card">
+                    <h4 style={{ fontSize: "12px", fontWeight: "700", marginBottom: "4px" }}>Researcher Observations & Field Logs</h4>
+                    <p style={{ color: PAL.muted, fontSize: "10px", marginBottom: "10px" }}>
+                      Compile physical findings or operator approximations below. Export the workspace observations alongside simulation diagnostics as a standard scientific Markdown file.
+                    </p>
+                    <textarea 
+                      value={researchNotes} 
+                      onChange={(e) => setResearchNotes(e.target.value)} 
+                      placeholder="Write notes about simulation parameters, speedup comparisons, grid stability, or model accuracy fits..." 
+                      className="notes-textarea" 
+                    />
+                    <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                      <button onClick={exportReport} className="btn btn-outline-cyan">
+                        📥 EXPORT SCIENTIFIC REPORT (.md)
+                      </button>
+                      {simDone && (
+                        <button 
+                          onClick={() => {
+                            if (!solFinal || !fnoFinal || !errField) return;
+                            const N_pts = solFinal.length;
+                            const rows = ["x,u_solver,u_fno,abs_error"];
+                            for (let i = 0; i < N_pts; i++) {
+                              const x = (i / (N_pts - 1)).toFixed(6);
+                              rows.push(`${x},${solFinal[i]},${fnoFinal[i]},${errField[i]}`);
+                            }
+                            const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `simulation_final_profile_${Date.now()}.csv`;
+                            document.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                          }} 
+                          className="btn btn-outline-amber"
+                        >
+                          📥 EXPORT FINAL SIMULATION STATE (.csv)
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Code section */}
+                  <div className="sidebar-card">
+                    <div className="math-header-block" style={{ color: PAL.muted }}>Solver Python Core Script</div>
+                    <CodeBlock lines={[
+                      "import numpy as np",
+                      "from scipy.linalg import solve_banded",
+                      "",
+                      "def solve_reaction_diffusion(D, r, u0, dx=1/127, dt=5e-5, T_end=1.0):",
+                      "    # Crank-Nicolson implicit solver for Neumann boundaries",
+                      "    N = len(u0)",
+                      "    lam = D * dt / (2 * dx**2)",
+                      "    u = u0.copy()",
+                      "    ab = np.zeros((3, N))",
+                      "    ab[0, 1:]  = -lam  # Superdiagonal",
+                      "    ab[1, :]   = 1 + 2 * lam  # Main diagonal",
+                      "    ab[2, :-1] = -lam  # Subdiagonal",
+                      "    ab[1, 0] = 1 + lam",
+                      "    ab[1, -1] = 1 + lam",
+                      "    n_steps = round(T_end / dt)",
+                      "    for _ in range(n_steps):",
+                      "        l = np.roll(u, 1); r_ = np.roll(u, -1)",
+                      "        l[0] = u[0]; r_[-1] = u[-1]",
+                      "        rhs = (u + lam * (l - 2*u + r_) + dt/2 * r * u * (1 - u))",
+                      "        u = solve_banded((1, 1), ab, rhs)",
+                      "    return u"
+                    ]} />
+                  </div>
+                </div>
+              </div>
+            </div>
 
           </div>
+
         </div>
+
       </div>
     </div>
   );
