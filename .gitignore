@@ -3,6 +3,7 @@ build
 .env
 .env.*
 !.env.example
+!.env.production
 .vscode
 
 .vercel
