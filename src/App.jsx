@@ -439,6 +439,46 @@ export default function App() {
   const [expRows, setExpRows] = useState([]);
   const [expName, setExpName] = useState("");
   const [expErr, setExpErr] = useState("");
+  const [expWarn, setExpWarn] = useState("");
+
+  // ── Web scrape (browser demo + Python recipe) ─────────────────────────────
+  const [scrapeUrl, setScrapeUrl] = useState("https://example.com");
+  const [scrapeUseProxy, setScrapeUseProxy] = useState(true);
+  const [scrapeLoading, setScrapeLoading] = useState(false);
+  const [scrapeOut, setScrapeOut] = useState("");
+  const [scrapeErr, setScrapeErr] = useState("");
+  const [scrapeStatus, setScrapeStatus] = useState("");
+
+  const runScrapeDemo = useCallback(async () => {
+    const u = scrapeUrl.trim();
+    if (!u) {
+      setScrapeErr("Enter a URL (https://…)");
+      return;
+    }
+    setScrapeLoading(true);
+    setScrapeErr("");
+    setScrapeOut("");
+    setScrapeStatus("");
+    try {
+      let res;
+      if (scrapeUseProxy) {
+        const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`;
+        res = await fetch(proxy);
+      } else {
+        res = await fetch(u, { method: "GET", mode: "cors" });
+      }
+      const text = await res.text();
+      setScrapeStatus(scrapeUseProxy ? `proxy OK (${text.length} chars)` : `HTTP ${res.status} (${text.length} chars)`);
+      setScrapeOut(text.length > 14000 ? `${text.slice(0, 14000)}\n\n… [truncated]` : text);
+      if (!scrapeUseProxy && !res.ok) setScrapeErr(`Response not OK: ${res.status}`);
+    } catch (e) {
+      setScrapeErr(
+        e?.message ||
+          "Fetch failed. Most websites block browser requests (CORS). Use “proxy (demo)” or run the Python script below on your machine."
+      );
+    }
+    setScrapeLoading(false);
+  }, [scrapeUrl, scrapeUseProxy]);
 
   // ── Tab ───────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState("simulate");
@@ -607,23 +647,39 @@ export default function App() {
       const lines = txt.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
       if (!lines.length) {
         setExpErr("CSV file is empty.");
+        setExpWarn("");
         setExpRows([]);
         return;
       }
-      const head = lines[0].toLowerCase();
-      const hasHeader = head.includes("x") && (head.includes("u_exp") || head.includes("uexp") || head.includes("u"));
+      const splitCsv = (line) =>
+        line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+      const firstParts = splitCsv(lines[0]);
+      const t0 = (firstParts[0] || "").toLowerCase();
+      const t1 = (firstParts[1] || "").toLowerCase();
+      const x0 = Number(firstParts[0]);
+      const u0 = Number(firstParts[1]);
+      const firstRowIsNumericPair =
+        Number.isFinite(x0) && Number.isFinite(u0);
+      const X_HEADER = new Set(["x", "position", "x_coord", "pos"]);
+      const U_HEADER = new Set(["u_exp", "uexp", "u", "y", "measurement"]);
+      const looksLikeNamedHeader =
+        firstParts.length >= 2 && X_HEADER.has(t0) && U_HEADER.has(t1);
+      const hasHeader = !firstRowIsNumericPair && looksLikeNamedHeader;
       const body = hasHeader ? lines.slice(1) : lines;
       const rows = [];
+      let clampedCount = 0;
       for (const line of body) {
         const parts = line.split(",").map(v => v.trim());
         if (parts.length < 2) continue;
         const x = Number(parts[0]);
         const u = Number(parts[1]);
         if (!Number.isFinite(x) || !Number.isFinite(u)) continue;
+        if (u > 1 || u < 0) clampedCount++;
         rows.push({ x, uExp: Math.min(1, Math.max(0, u)) });
       }
       if (!rows.length) {
         setExpErr("No valid rows found. Use two CSV columns: x,u_exp");
+        setExpWarn("");
         setExpRows([]);
         return;
       }
@@ -631,9 +687,15 @@ export default function App() {
       setExpName(file.name);
       setExpRows(rows);
       setExpErr("");
+      setExpWarn(
+        clampedCount > 0
+          ? `${clampedCount} value(s) were outside [0,1] and were clamped — check units or that the first row is not a mis-detected header.`
+          : ""
+      );
       setTab("upload");
     } catch (e) {
       setExpErr(`Could not read file: ${e.message}`);
+      setExpWarn("");
       setExpRows([]);
     }
   }, []);
@@ -1048,6 +1110,7 @@ Keep it conversational, technically accurate but accessible. Max 120 words total
               ["benchmark","📊 Benchmark"],
               ["evaluate","🔍 Evaluate"],
               ["upload","📥 Upload Data"],
+              ["scrape","🌐 Web scrape"],
               ["dataset","🗂️ Dataset"],
               ["code","</> Code"],
             ].map(([id,label])=>(
@@ -1498,6 +1561,7 @@ Keep it conversational, technically accurate but accessible. Max 120 words total
                       Format: two columns `x,u_exp` where x is in [0,1].
                     </div>
                     {expErr && <div style={{color:PAL.red,fontSize:12,marginTop:8}}>{expErr}</div>}
+                    {expWarn && <div style={{color:PAL.accent2,fontSize:12,marginTop:8}}>{expWarn}</div>}
                   </div>
                 </Section>
 
@@ -1532,6 +1596,72 @@ Keep it conversational, technically accurate but accessible. Max 120 words total
                     </div>
                   </Section>
                 )}
+              </div>
+            )}
+
+            {/* ══ WEB SCRAPE TAB ══ */}
+            {tab==="scrape" && (
+              <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`}}>
+                  <div style={{color:PAL.text,fontSize:13,lineHeight:1.7,marginBottom:10}}>
+                    Browsers cannot scrape arbitrary sites directly: <span style={{color:PAL.accent2}}>CORS</span> blocks most
+                    cross-origin HTML fetches. This tab includes a <b>demo fetch</b> (optional public proxy) and a <b>Python</b> recipe
+                    for real scraping on your computer or server.
+                  </div>
+                </div>
+
+                <Section title="Live fetch (demo)">
+                  <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`,display:"flex",flexDirection:"column",gap:10}}>
+                    <input
+                      value={scrapeUrl}
+                      onChange={(e)=>setScrapeUrl(e.target.value)}
+                      placeholder="https://example.com"
+                      style={{width:"100%",padding:"10px 12px",borderRadius:8,background:PAL.bg,color:PAL.text,
+                        border:`1px solid ${PAL.border}`,fontFamily:"monospace",fontSize:12}}
+                    />
+                    <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",color:PAL.muted,fontSize:12}}>
+                      <input type="checkbox" checked={scrapeUseProxy} onChange={(e)=>setScrapeUseProxy(e.target.checked)} />
+                      Use public CORS proxy (allorigins) — demo only; do not use for private data
+                    </label>
+                    <button
+                      type="button"
+                      onClick={runScrapeDemo}
+                      disabled={scrapeLoading}
+                      style={{alignSelf:"flex-start",padding:"10px 16px",borderRadius:8,border:"none",
+                        background:scrapeLoading?PAL.border:PAL.accent,color:PAL.bg,fontWeight:700,cursor:scrapeLoading?"not-allowed":"pointer",
+                        fontFamily:"monospace",fontSize:11}}
+                    >
+                      {scrapeLoading ? "Fetching…" : "Fetch page (raw text)"}
+                    </button>
+                    {scrapeStatus && <div style={{color:PAL.green,fontSize:11}}>{scrapeStatus}</div>}
+                    {scrapeErr && <div style={{color:PAL.red,fontSize:12}}>{scrapeErr}</div>}
+                    {scrapeOut && (
+                      <pre style={{margin:0,maxHeight:360,overflow:"auto",background:"#040609",padding:12,borderRadius:8,
+                        border:`1px solid ${PAL.border}`,fontSize:10,color:PAL.text,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                        {scrapeOut}
+                      </pre>
+                    )}
+                  </div>
+                </Section>
+
+                <Section title="Python — real scraping (local / backend)">
+                  <CodeBlock lines={[
+                    "# pip install requests beautifulsoup4",
+                    "import requests",
+                    "from bs4 import BeautifulSoup",
+                    "",
+                    "url = \"https://example.com\"",
+                    "headers = {\"User-Agent\": \"Mozilla/5.0 (research demo)\"}",
+                    "r = requests.get(url, headers=headers, timeout=15)",
+                    "r.raise_for_status()",
+                    "soup = BeautifulSoup(r.text, \"html.parser\")",
+                    "title = soup.title.string.strip() if soup.title else \"\"",
+                    "print(\"Title:\", title)",
+                    "# Example: collect text from paragraphs",
+                    "for p in soup.select(\"p\")[:5]:",
+                    "    print(p.get_text(strip=True)[:200])",
+                  ]}/>
+                </Section>
               </div>
             )}
 
