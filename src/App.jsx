@@ -435,6 +435,51 @@ export default function App() {
   const [aiText,    setAiText]    = useState("");
   const [aiLoad,    setAiLoad]    = useState(false);
 
+  // ── Experimental upload state ─────────────────────────────────────────────
+  const [expRows, setExpRows] = useState([]);
+  const [expName, setExpName] = useState("");
+  const [expErr, setExpErr] = useState("");
+  const [expWarn, setExpWarn] = useState("");
+
+  // ── Web scrape (browser demo + Python recipe) ─────────────────────────────
+  const [scrapeUrl, setScrapeUrl] = useState("https://example.com");
+  const [scrapeUseProxy, setScrapeUseProxy] = useState(true);
+  const [scrapeLoading, setScrapeLoading] = useState(false);
+  const [scrapeOut, setScrapeOut] = useState("");
+  const [scrapeErr, setScrapeErr] = useState("");
+  const [scrapeStatus, setScrapeStatus] = useState("");
+
+  const runScrapeDemo = useCallback(async () => {
+    const u = scrapeUrl.trim();
+    if (!u) {
+      setScrapeErr("Enter a URL (https://…)");
+      return;
+    }
+    setScrapeLoading(true);
+    setScrapeErr("");
+    setScrapeOut("");
+    setScrapeStatus("");
+    try {
+      let res;
+      if (scrapeUseProxy) {
+        const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`;
+        res = await fetch(proxy);
+      } else {
+        res = await fetch(u, { method: "GET", mode: "cors" });
+      }
+      const text = await res.text();
+      setScrapeStatus(scrapeUseProxy ? `proxy OK (${text.length} chars)` : `HTTP ${res.status} (${text.length} chars)`);
+      setScrapeOut(text.length > 14000 ? `${text.slice(0, 14000)}\n\n… [truncated]` : text);
+      if (!scrapeUseProxy && !res.ok) setScrapeErr(`Response not OK: ${res.status}`);
+    } catch (e) {
+      setScrapeErr(
+        e?.message ||
+          "Fetch failed. Most websites block browser requests (CORS). Use “proxy (demo)” or run the Python script below on your machine."
+      );
+    }
+    setScrapeLoading(false);
+  }, [scrapeUrl, scrapeUseProxy]);
+
   // ── Tab ───────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState("simulate");
 
@@ -456,11 +501,15 @@ export default function App() {
   const [copied, setCopied] = useState(false);
 
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const num = (x, lo, hi) => {
+    const v = Number(x);
+    return Number.isFinite(v) ? clamp(v, lo, hi) : lo;
+  };
   const applyParams = useCallback((p) => {
-    setD(clamp(+p.D, 0.01, 1.0));
-    setR(clamp(+p.r, 0.5, 5.0));
-    setMu(clamp(+p.mu, 0.1, 0.9));
-    setSig(clamp(+p.sig, 0.02, 0.3));
+    setD(num(p.D, 0.01, 1.0));
+    setR(num(p.r, 0.5, 5.0));
+    setMu(num(p.mu, 0.1, 0.9));
+    setSig(num(p.sig, 0.02, 0.3));
   }, []);
 
   const applyPreset = useCallback((id) => {
@@ -482,8 +531,24 @@ export default function App() {
 
   const resetParams = useCallback(() => {
     setPresetId("baseline");
-    applyParams(DEFAULT_PARAMS);
-  }, [applyParams]);
+    setScenarioId("");
+    setD(DEFAULT_PARAMS.D);
+    setR(DEFAULT_PARAMS.r);
+    setMu(DEFAULT_PARAMS.mu);
+    setSig(DEFAULT_PARAMS.sig);
+    setRunning(false);
+    setSimDone(false);
+    setSnaps([]);
+    setSolFinal(null);
+    setFnoFinal(null);
+    setSolMs(null);
+    setFnoMs(null);
+    setSpeedup(null);
+    setL2(null);
+    setErrField(null);
+    setAiText("");
+    setAiLoad(false);
+  }, []);
 
   useEffect(() => {
     try {
@@ -575,6 +640,89 @@ export default function App() {
     }
     downloadText("fno_demo_final_state.csv", rows.join("\n"), "text/csv");
   }, [simDone, solFinal, fnoFinal, errField]);
+
+  const parseExperimentalCSV = useCallback(async (file) => {
+    try {
+      const txt = await file.text();
+      const lines = txt.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (!lines.length) {
+        setExpErr("CSV file is empty.");
+        setExpWarn("");
+        setExpRows([]);
+        return;
+      }
+      const splitCsv = (line) =>
+        line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+      const firstParts = splitCsv(lines[0]);
+      const t0 = (firstParts[0] || "").toLowerCase();
+      const t1 = (firstParts[1] || "").toLowerCase();
+      const x0 = Number(firstParts[0]);
+      const u0 = Number(firstParts[1]);
+      const firstRowIsNumericPair =
+        Number.isFinite(x0) && Number.isFinite(u0);
+      const X_HEADER = new Set(["x", "position", "x_coord", "pos"]);
+      const U_HEADER = new Set(["u_exp", "uexp", "u", "y", "measurement"]);
+      const looksLikeNamedHeader =
+        firstParts.length >= 2 && X_HEADER.has(t0) && U_HEADER.has(t1);
+      const hasHeader = !firstRowIsNumericPair && looksLikeNamedHeader;
+      const body = hasHeader ? lines.slice(1) : lines;
+      const rows = [];
+      let clampedCount = 0;
+      for (const line of body) {
+        const parts = line.split(",").map(v => v.trim());
+        if (parts.length < 2) continue;
+        const x = Number(parts[0]);
+        const u = Number(parts[1]);
+        if (!Number.isFinite(x) || !Number.isFinite(u)) continue;
+        if (u > 1 || u < 0) clampedCount++;
+        rows.push({ x, uExp: Math.min(1, Math.max(0, u)) });
+      }
+      if (!rows.length) {
+        setExpErr("No valid rows found. Use two CSV columns: x,u_exp");
+        setExpWarn("");
+        setExpRows([]);
+        return;
+      }
+      rows.sort((a, b) => a.x - b.x);
+      setExpName(file.name);
+      setExpRows(rows);
+      setExpErr("");
+      setExpWarn(
+        clampedCount > 0
+          ? `${clampedCount} value(s) were outside [0,1] and were clamped — check units or that the first row is not a mis-detected header.`
+          : ""
+      );
+      setTab("upload");
+    } catch (e) {
+      setExpErr(`Could not read file: ${e.message}`);
+      setExpWarn("");
+      setExpRows([]);
+    }
+  }, []);
+
+  const compareWith = (target) => {
+    if (!expRows.length || !target?.length) return null;
+    let num = 0;
+    let den = 0;
+    let mae = 0;
+    for (const row of expRows) {
+      const idx = Math.min(target.length - 1, Math.max(0, Math.round(row.x * (target.length - 1))));
+      const pred = target[idx];
+      const diff = pred - row.uExp;
+      num += diff * diff;
+      den += row.uExp * row.uExp;
+      mae += Math.abs(diff);
+    }
+    const n = expRows.length;
+    return {
+      l2: den > 1e-12 ? (Math.sqrt(num / den) * 100).toFixed(3) : "0.000",
+      mae: (mae / n).toFixed(4),
+      n,
+    };
+  };
+
+  const expVsSolver = compareWith(solFinal);
+  const expVsFno = compareWith(fnoFinal);
 
   // ── Live IC preview ───────────────────────────────────────────────────────
   const icData = Array.from({length:128},(_,i)=>{
@@ -670,11 +818,23 @@ export default function App() {
   const getAI = useCallback(async()=>{
     setAiLoad(true);
     try {
+      const apiKey = process.env.REACT_APP_ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        setAiText("⚙️ To enable AI explanations, set the REACT_APP_ANTHROPIC_API_KEY environment variable.\n\nFor deployment: Add your Anthropic API key as a build-time environment variable in your CI/CD pipeline (e.g., GitHub Actions secrets).");
+        setAiLoad(false);
+        return;
+      }
+      
       const res=await fetch("https://api.anthropic.com/v1/messages",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key":apiKey,
+          "anthropic-version":"2023-06-01"
+        },
         body:JSON.stringify({
-          model:"claude-sonnet-4-20250514",max_tokens:1000,
+          model:"claude-opus-4-1",
+          max_tokens:1000,
           messages:[{role:"user",content:
             `You are a research supervisor explaining a simulation result to Sameer Shekhar, a 3rd year Chemical Engineering undergraduate at BIT Mesra who is learning about neural operator surrogates.
 
@@ -696,8 +856,14 @@ Keep it conversational, technically accurate but accessible. Max 120 words total
         })
       });
       const d=await res.json();
-      setAiText(d.content?.map(c=>c.text||"").join("")||"Could not load explanation.");
-    } catch(e){ setAiText("Could not load AI explanation."); }
+      if (d.error) {
+        setAiText(`API Error: ${d.error.message || "Unknown error"}`);
+      } else {
+        setAiText(d.content?.map(c=>c.text||"").join("")||"Could not load explanation.");
+      }
+    } catch(e){ 
+      setAiText(`Could not load AI explanation: ${e.message}`);
+    }
     setAiLoad(false);
   },[D,r,mu,sig,solMs,fnoMs,speedup,l2,waveSpeed]);
 
@@ -943,6 +1109,8 @@ Keep it conversational, technically accurate but accessible. Max 120 words total
               ["training","🧠 Training"],
               ["benchmark","📊 Benchmark"],
               ["evaluate","🔍 Evaluate"],
+              ["upload","📥 Upload Data"],
+              ["scrape","🌐 Web scrape"],
               ["dataset","🗂️ Dataset"],
               ["code","</> Code"],
             ].map(([id,label])=>(
@@ -1370,6 +1538,133 @@ Keep it conversational, technically accurate but accessible. Max 120 words total
             )}
 
             {/* ══ DATASET TAB ══ */}
+            {tab==="upload" && (
+              <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  <Metric label="Uploaded File" value={expName || "None"} unit="" color={PAL.accent} sub="CSV: x,u_exp"/>
+                  <Metric label="Rows Parsed" value={expRows.length || 0} unit="" color={PAL.green} sub="Valid points"/>
+                  <Metric label="Need Simulation" value={simDone ? "Ready" : "Run first"} unit="" color={simDone ? PAL.green : PAL.accent2} sub="For comparison"/>
+                </div>
+
+                <Section title="Upload Experimental CSV">
+                  <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`}}>
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(e)=> {
+                        const f = e.target.files?.[0];
+                        if (f) parseExperimentalCSV(f);
+                      }}
+                      style={{color:PAL.text,fontFamily:"monospace"}}
+                    />
+                    <div style={{color:PAL.muted,fontSize:12,marginTop:10}}>
+                      Format: two columns `x,u_exp` where x is in [0,1].
+                    </div>
+                    {expErr && <div style={{color:PAL.red,fontSize:12,marginTop:8}}>{expErr}</div>}
+                    {expWarn && <div style={{color:PAL.accent2,fontSize:12,marginTop:8}}>{expWarn}</div>}
+                  </div>
+                </Section>
+
+                {expRows.length > 0 && (
+                  <Section title="Experimental Data Preview">
+                    <div style={{background:PAL.dim,borderRadius:8,border:`1px solid ${PAL.border}`,overflow:"hidden"}}>
+                      <div style={{display:"grid",gridTemplateColumns:"80px 1fr 1fr",background:PAL.panel,padding:"8px 16px"}}>
+                        {["#","x","u_exp"].map(h => (
+                          <span key={h} style={{color:PAL.muted,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{h}</span>
+                        ))}
+                      </div>
+                      <div style={{maxHeight:260,overflowY:"auto"}}>
+                        {expRows.slice(0, 120).map((row, i)=>(
+                          <div key={`${row.x}-${i}`} style={{display:"grid",gridTemplateColumns:"80px 1fr 1fr",padding:"7px 16px",borderTop:`1px solid ${PAL.border}`}}>
+                            <span style={{color:PAL.border,fontSize:11}}>{i+1}</span>
+                            <span style={{color:PAL.accent,fontSize:11}}>{row.x.toFixed(4)}</span>
+                            <span style={{color:PAL.green,fontSize:11}}>{row.uExp.toFixed(4)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </Section>
+                )}
+
+                {simDone && expRows.length > 0 && (
+                  <Section title="Experimental vs Model Comparison">
+                    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                      <Metric label="Solver Rel. L2" value={`${expVsSolver?.l2 || "—"}%`} unit="" color={PAL.accent2} sub={`n=${expVsSolver?.n || 0}`}/>
+                      <Metric label="Solver MAE" value={expVsSolver?.mae || "—"} unit="" color={PAL.accent2} sub="|u_pred - u_exp|"/>
+                      <Metric label="FNO Rel. L2" value={`${expVsFno?.l2 || "—"}%`} unit="" color={PAL.accent} sub={`n=${expVsFno?.n || 0}`}/>
+                      <Metric label="FNO MAE" value={expVsFno?.mae || "—"} unit="" color={PAL.accent} sub="|u_pred - u_exp|"/>
+                    </div>
+                  </Section>
+                )}
+              </div>
+            )}
+
+            {/* ══ WEB SCRAPE TAB ══ */}
+            {tab==="scrape" && (
+              <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`}}>
+                  <div style={{color:PAL.text,fontSize:13,lineHeight:1.7,marginBottom:10}}>
+                    Browsers cannot scrape arbitrary sites directly: <span style={{color:PAL.accent2}}>CORS</span> blocks most
+                    cross-origin HTML fetches. This tab includes a <b>demo fetch</b> (optional public proxy) and a <b>Python</b> recipe
+                    for real scraping on your computer or server.
+                  </div>
+                </div>
+
+                <Section title="Live fetch (demo)">
+                  <div style={{background:PAL.dim,borderRadius:8,padding:14,border:`1px solid ${PAL.border}`,display:"flex",flexDirection:"column",gap:10}}>
+                    <input
+                      value={scrapeUrl}
+                      onChange={(e)=>setScrapeUrl(e.target.value)}
+                      placeholder="https://example.com"
+                      style={{width:"100%",padding:"10px 12px",borderRadius:8,background:PAL.bg,color:PAL.text,
+                        border:`1px solid ${PAL.border}`,fontFamily:"monospace",fontSize:12}}
+                    />
+                    <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",color:PAL.muted,fontSize:12}}>
+                      <input type="checkbox" checked={scrapeUseProxy} onChange={(e)=>setScrapeUseProxy(e.target.checked)} />
+                      Use public CORS proxy (allorigins) — demo only; do not use for private data
+                    </label>
+                    <button
+                      type="button"
+                      onClick={runScrapeDemo}
+                      disabled={scrapeLoading}
+                      style={{alignSelf:"flex-start",padding:"10px 16px",borderRadius:8,border:"none",
+                        background:scrapeLoading?PAL.border:PAL.accent,color:PAL.bg,fontWeight:700,cursor:scrapeLoading?"not-allowed":"pointer",
+                        fontFamily:"monospace",fontSize:11}}
+                    >
+                      {scrapeLoading ? "Fetching…" : "Fetch page (raw text)"}
+                    </button>
+                    {scrapeStatus && <div style={{color:PAL.green,fontSize:11}}>{scrapeStatus}</div>}
+                    {scrapeErr && <div style={{color:PAL.red,fontSize:12}}>{scrapeErr}</div>}
+                    {scrapeOut && (
+                      <pre style={{margin:0,maxHeight:360,overflow:"auto",background:"#040609",padding:12,borderRadius:8,
+                        border:`1px solid ${PAL.border}`,fontSize:10,color:PAL.text,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                        {scrapeOut}
+                      </pre>
+                    )}
+                  </div>
+                </Section>
+
+                <Section title="Python — real scraping (local / backend)">
+                  <CodeBlock lines={[
+                    "# pip install requests beautifulsoup4",
+                    "import requests",
+                    "from bs4 import BeautifulSoup",
+                    "",
+                    "url = \"https://example.com\"",
+                    "headers = {\"User-Agent\": \"Mozilla/5.0 (research demo)\"}",
+                    "r = requests.get(url, headers=headers, timeout=15)",
+                    "r.raise_for_status()",
+                    "soup = BeautifulSoup(r.text, \"html.parser\")",
+                    "title = soup.title.string.strip() if soup.title else \"\"",
+                    "print(\"Title:\", title)",
+                    "# Example: collect text from paragraphs",
+                    "for p in soup.select(\"p\")[:5]:",
+                    "    print(p.get_text(strip=True)[:200])",
+                  ]}/>
+                </Section>
+              </div>
+            )}
+
             {tab==="dataset" && (
               <div style={{display:"flex",flexDirection:"column",gap:20}}>
                 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
