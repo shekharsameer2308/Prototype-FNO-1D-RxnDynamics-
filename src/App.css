@@ -1756,3 +1756,98 @@ html, body {
   }
 }
 
+/* ==========================================================================
+   HIGH-FIDELITY SVG & VERCEL BADGE WORKSPACE GLOW
+   ========================================================================== */
+.custom-svg-icon {
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.launcher-card:hover .custom-svg-icon {
+  transform: scale(1.1);
+}
+
+/* Vercel live deployment badge */
+.vercel-badge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 245, 212, 0.2);
+  border-radius: 20px;
+  padding: 4px 12px;
+  color: var(--accent-fno);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 10px rgba(0, 245, 212, 0.05);
+  margin-right: 12px;
+}
+
+.vercel-badge-btn:hover {
+  background: rgba(0, 245, 212, 0.08);
+  border-color: var(--accent-fno);
+  box-shadow: 0 0 15px rgba(0, 245, 212, 0.2);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.vercel-logo-svg {
+  fill: currentColor;
+  transition: transform 0.3s ease;
+}
+
+.vercel-badge-btn:hover .vercel-logo-svg {
+  transform: rotate(360deg);
+}
+
+.vercel-dot-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-fno);
+  box-shadow: 0 0 8px var(--accent-fno);
+  animation: pulseGreenGlow 1.8s infinite ease-in-out;
+}
+
+@keyframes pulseGreenGlow {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+    box-shadow: 0 0 0 0 rgba(0, 245, 212, 0.7);
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+    box-shadow: 0 0 8px 3px rgba(0, 245, 212, 0.3);
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.6;
+    box-shadow: 0 0 0 0 rgba(0, 245, 212, 0);
+  }
+}
+
+/* Spinning Cog Icon in Ready overlay */
+.spinning-cog-icon {
+  animation: spinCog 8s infinite linear;
+}
+
+@keyframes spinCog {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Dual Nesting Spinner in calculation overlay */
+.neural-spinner-icon {
+  animation: spinOuter 2.5s infinite linear;
+}
+
+@keyframes spinOuter {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+

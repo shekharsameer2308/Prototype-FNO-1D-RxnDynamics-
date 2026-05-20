@@ -30,12 +30,54 @@ $$\frac{\partial u}{\partial t} = D \frac{\partial^2 u}{\partial x^2} + r \, u \
 
 Where $u(x, t) \in [0, 1]$ is the concentration, $D$ is the diffusion coefficient, and $r$ is the reaction rate.
 
-The solver uses a **Crank-Nicolson finite-difference scheme**, which is a second-order, implicitly stable temporal integration method. 
-* **Discretization:** The spatial domain is discretized into $N = 128$ nodes, and time is stepped over $N_t = 1000$ intervals.
-* **Linearization:** The non-linear reaction term $r u(1-u)$ is evaluated at the current time step (semi-implicit linearization) to keep the system linear.
-* **Thomas Algorithm:** The spatial second-derivative discretization yields a tridiagonal matrix system at each time step:
-  $$A u_j^{n+1} = B u_j^n + F(u_j^n)$$
-  The solver solves this tridiagonal system in $O(N)$ operations at every time step using the **Thomas algorithm** (a simplified form of Gaussian elimination).
+#### Crank-Nicolson Finite-Difference Discretization
+The Crank-Nicolson scheme is a second-order implicit method in time and second-order central-difference method in space. For the 1D reaction-diffusion system:
+
+$$\frac{u_i^{n+1} - u_i^n}{\Delta t} = \frac{D}{2} \left[ \frac{u_{i+1}^{n+1} - 2u_i^{n+1} + u_{i-1}^{n+1}}{\Delta x^2} + \frac{u_{i+1}^n - 2u_i^n + u_{i-1}^n}{\Delta x^2} \right] + \frac{1}{2} \left( R(u_i^n) + R(u_i^{n+1}) \right)$$
+
+By linearizing the reaction kinetics $R(u) = r \, u \, (1-u)$ semi-implicitly at the current time step (to maintain linear matrix solve efficiency), and introducing the grid parameter $\lambda = \frac{D \Delta t}{2 \Delta x^2}$, we can rewrite the system as:
+
+$$-\lambda u_{i-1}^{n+1} + (1 + 2\lambda) u_i^{n+1} - \lambda u_{i+1}^{n+1} = \lambda u_{i-1}^n + (1 - 2\lambda) u_i^n + \lambda u_{i+1}^n + \Delta t \, R(u_i^n)$$
+
+To incorporate physical boundary integrity, **zero-flux Neumann boundary conditions** ($\frac{\partial u}{\partial x} = 0$) are strictly enforced at the boundaries:
+$$u_{-1} = u_1 \quad \text{and} \quad u_{N} = u_{N-2}$$
+
+Which transforms the boundary equations for the nodes $i=0$ and $i=N-1$ into:
+$$(1 + \lambda) u_0^{n+1} - \lambda u_1^{n+1} = (1 - \lambda) u_0^n + \lambda u_1^n + \Delta t \, R(u_0^n)$$
+$$-\lambda u_{N-2}^{n+1} + (1 + \lambda) u_{N-1}^{n+1} = \lambda u_{N-2}^n + (1 - \lambda) u_{N-1}^n + \Delta t \, R(u_{N-1}^n)$$
+
+This sets up a tridiagonal linear equation system $A u^{n+1} = d$, where $A$ is a tridiagonal matrix of size $N \times N$.
+
+#### Thomas Tridiagonal Solver Algorithm & Recurrence Relations
+To solve the linear system in optimal $O(N)$ computational complexity, the solver employs the Thomas algorithm:
+$$a_i u_{i-1}^{n+1} + b_i u_i^{n+1} + c_i u_{i+1}^{n+1} = d_i, \quad i = 0, 1, \dots, N-1$$
+
+Where:
+* $a_0 = 0, c_{N-1} = 0$
+* $a_i = -\lambda$ for $i > 0$
+* $c_i = -\lambda$ for $i < N-1$
+* $b_0 = 1 + \lambda, b_{N-1} = 1 + \lambda$, and $b_i = 1 + 2\lambda$ for $0 < i < N-1$
+
+The solution is computed in two sequential sweeps:
+1. **Forward Elimination Sweep:**
+   $$\begin{aligned}
+   c'_0 &= \frac{c_0}{b_0}, \quad d'_0 = \frac{d_0}{b_0} \\
+   m_i &= b_i - a_i c'_{i-1} \\
+   c'_i &= \frac{c_i}{m_i}, \quad d'_i = \frac{d_i - a_i d'_{i-1}}{m_i} \quad \text{for } i = 1, 2, \dots, N-1
+   \end{aligned}$$
+   *Hardened Integrity Regularization:* To avoid division by zero or NaN occurrences on extreme parameter fields, denominators are checked against a precision boundary $\epsilon = 10^{-15}$:
+   $$m_i \leftarrow \text{sign}(m_i) \cdot \max(|m_i|, \epsilon)$$
+
+2. **Back-Substitution Sweep:**
+   $$\begin{aligned}
+   u_{N-1}^{n+1} &= d'_{N-1} \\
+   u_i^{n+1} &= d'_i - c'_i u_{i+1}^{n+1} \quad \text{for } i = N-2, N-3, \dots, 0
+   \end{aligned}$$
+
+#### Courant-Friedrichs-Lewy (CFL) Grid Stability
+The traditional explicit numerical solver stability is constrained by the CFL limit:
+$$\text{CFL} = \frac{D \Delta t}{\Delta x^2} \leq 0.5$$
+The Crank-Nicolson method is unconditionally stable in theory for linear systems. However, with nonlinear coupling terms like Fisher-KPP kinetics, high grid parameters can induce numerical oscillations. Monitoring this metric dynamically warns users about potential solver decay.
 
 ### 2. The Fourier Neural Operator (FNO) Core Operator
 The FNO maps the initial condition $u(x, t=0)$ and physical parameters $(D, r)$ directly to the final concentration profile $u(x, t=1.0)$.

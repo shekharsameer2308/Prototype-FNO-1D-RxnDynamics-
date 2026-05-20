@@ -2,6 +2,134 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   PREMIUM GLASSMORPHISM & NEON GLYPH SVG ICONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+const IconWaveform = () => (
+  <svg className="custom-svg-icon wave-svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 12h3l3-9 4 18 3-12h5" stroke="var(--accent-fno)" strokeWidth="2" strokeLinejoin="round" />
+    <path d="M3 18h18" stroke="var(--border)" strokeWidth="1" strokeDasharray="3 3" />
+    <circle cx="12" cy="15" r="2.5" fill="var(--accent-solver)" stroke="none" />
+  </svg>
+);
+
+const IconMesh = () => (
+  <svg className="custom-svg-icon mesh-svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2.5" stroke="var(--accent-solver)" strokeWidth="1.5" />
+    <path d="M9 3v18" stroke="rgba(139, 92, 246, 0.25)" />
+    <path d="M15 3v18" stroke="rgba(139, 92, 246, 0.25)" />
+    <path d="M3 9h18" stroke="rgba(139, 92, 246, 0.25)" />
+    <path d="M3 15h18" stroke="rgba(139, 92, 246, 0.25)" />
+    <circle cx="9" cy="9" r="2.5" fill="var(--accent-fno)" stroke="none" />
+    <circle cx="15" cy="15" r="2.5" fill="var(--accent-fno)" stroke="none" />
+  </svg>
+);
+
+const IconChart = () => (
+  <svg className="custom-svg-icon chart-svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 3v18h18" stroke="var(--muted)" strokeWidth="1.5" />
+    <path d="M18 7l-5 5-4-3-5 6" stroke="var(--accent-fno)" strokeWidth="2" strokeLinejoin="round" />
+    <circle cx="6" cy="15" r="2" fill="var(--accent-solver)" stroke="none" />
+    <circle cx="10" cy="10" r="2" fill="var(--accent-solver)" stroke="none" />
+    <circle cx="14" cy="12" r="2" fill="var(--accent-solver)" stroke="none" />
+    <circle cx="18" cy="6" r="2" fill="var(--accent-solver)" stroke="none" />
+  </svg>
+);
+
+const IconLibrary = () => (
+  <svg className="custom-svg-icon lib-svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="var(--accent-solver)" strokeWidth="1.5" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="var(--accent-fno)" strokeWidth="2" />
+    <path d="M8 6h8" stroke="var(--border)" strokeWidth="1" />
+    <path d="M8 10h8" stroke="var(--border)" strokeWidth="1" />
+    <path d="M8 14h5" stroke="var(--border)" strokeWidth="1" />
+  </svg>
+);
+
+const IconDiagnostic = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px", verticalAlign: "middle" }}>
+    <path d="M22 12h-4l-3 9L9 3l-3 9H2" stroke="var(--accent-fno)" />
+  </svg>
+);
+
+const IconExport = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px", verticalAlign: "middle" }}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" />
+    <polyline points="7 10 12 15 17 10" stroke="currentColor" />
+    <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" />
+  </svg>
+);
+
+const IconClear = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px", verticalAlign: "middle" }}>
+    <polyline points="3 6 5 6 21 6" stroke="currentColor" />
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" />
+    <line x1="10" y1="11" x2="10" y2="17" stroke="currentColor" />
+    <line x1="14" y1="11" x2="14" y2="17" stroke="currentColor" />
+  </svg>
+);
+
+const IconInfo = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+    <circle cx="12" cy="12" r="10" stroke="var(--accent-fno)" />
+    <line x1="12" y1="16" x2="12" y2="12" stroke="var(--accent-fno)" />
+    <line x1="12" y1="8" x2="12.01" y2="8" stroke="var(--accent-fno)" fill="currentColor" />
+  </svg>
+);
+
+const IconPlay = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <polygon points="6,4 20,12 6,20" />
+  </svg>
+);
+
+const IconPause = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <rect x="5" y="4" width="4" height="16" rx="1" />
+    <rect x="15" y="4" width="4" height="16" rx="1" />
+  </svg>
+);
+
+const IconRewind = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none" style={{ marginRight: "5px", verticalAlign: "middle" }}>
+    <polygon points="11,19 2,12 11,5" />
+    <polygon points="22,19 13,12 22,5" />
+  </svg>
+);
+
+const IconFastForward = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none" style={{ marginRight: "5px", verticalAlign: "middle" }}>
+    <polygon points="13,19 22,12 13,5" />
+    <polygon points="2,19 11,12 2,5" />
+  </svg>
+);
+
+const IconGear = () => (
+  <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent-solver)" strokeWidth="1.5" className="spinning-cog-icon" style={{ display: "inline-block" }}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
+
+const IconSpinner = () => (
+  <svg width="48" height="48" viewBox="0 0 50 50" className="neural-spinner-icon" style={{ display: "inline-block" }}>
+    <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(0, 245, 212, 0.12)" strokeWidth="4" />
+    <circle cx="25" cy="25" r="20" fill="none" stroke="var(--accent-fno)" strokeWidth="4" strokeDasharray="31.4 31.4" strokeLinecap="round" />
+    <circle cx="25" cy="25" r="14" fill="none" stroke="rgba(139, 92, 246, 0.12)" strokeWidth="3" />
+    <circle cx="25" cy="25" r="14" fill="none" stroke="var(--accent-solver)" strokeWidth="3" strokeDasharray="22 22" strokeLinecap="round" strokeDashoffset="11" />
+  </svg>
+);
+
+const VercelStatusBadge = () => (
+  <a href="https://fnoproject.vercel.app" target="_blank" rel="noopener noreferrer" className="vercel-badge-btn" title="View live production deployment on Vercel">
+    <svg className="vercel-logo-svg" width="10" height="10" viewBox="0 0 512 512" fill="currentColor">
+      <path d="M256,48L496,464H16Z" />
+    </svg>
+    <span className="vercel-text">DEPLOYED</span>
+    <span className="vercel-dot-pulse" />
+  </a>
+);
+
+/* ═══════════════════════════════════════════════════════════════════════════
    PHYSICS ENGINE — Crank-Nicolson Solver for 1D Reacting PDEs
    ═══════════════════════════════════════════════════════════════════════════ */
 function thomasSolve(lo, diag, up, rhs) {
@@ -9,10 +137,17 @@ function thomasSolve(lo, diag, up, rhs) {
   const c = new Float64Array(n);
   const d = new Float64Array(n);
   const x = new Float64Array(n);
-  c[0] = up[0] / diag[0]; 
-  d[0] = rhs[0] / diag[0];
+  
+  const eps = 1e-15;
+  const d0 = Math.abs(diag[0]) < eps ? (diag[0] >= 0 ? eps : -eps) : diag[0];
+  c[0] = up[0] / d0; 
+  d[0] = rhs[0] / d0;
+  
   for (let i = 1; i < n; i++) {
-    const m = diag[i] - lo[i] * c[i - 1];
+    let m = diag[i] - lo[i] * c[i - 1];
+    if (Math.abs(m) < eps) {
+      m = m >= 0 ? eps : -eps;
+    }
     c[i] = up[i] / m;
     d[i] = (rhs[i] - lo[i] * d[i - 1]) / m;
   }
@@ -24,45 +159,69 @@ function thomasSolve(lo, diag, up, rhs) {
 }
 
 function solvePDE(D, r, mu, sig, modelType = "fisher", N = 128, dt = 5e-5, T_end = 1.0) {
-  const dx = 1 / (N - 1);
-  const lam = D * dt / (2 * dx * dx);
-  let u = new Float64Array(N);
+  // Defensive input sanitization to block crash-inducing or NaN parameters
+  const N_safe = Math.max(3, Math.min(512, Math.round(N || 128)));
+  const dt_safe = Math.max(1e-6, Math.min(0.1, dt || 5e-5));
+  const D_safe = Math.max(1e-5, Math.min(10.0, D ?? 0.1));
+  const r_safe = Math.max(0.0, Math.min(50.0, r ?? 2.0));
+  const mu_safe = Math.max(0.001, Math.min(0.999, mu ?? 0.3));
+  const sig_safe = Math.max(0.001, Math.min(2.0, sig ?? 0.1));
+
+  const dx = 1 / (N_safe - 1);
+  const lam = D_safe * dt_safe / (2 * dx * dx);
+  let u = new Float64Array(N_safe);
   
   // Gaussian Initial Condition
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < N_safe; i++) {
     const x = i * dx;
-    u[i] = Math.min(1, Math.max(0, Math.exp(-0.5 * ((x - mu) / sig) ** 2)));
+    const exponent = -0.5 * ((x - mu_safe) / sig_safe) ** 2;
+    u[i] = Math.min(1, Math.max(0, Math.exp(exponent)));
   }
   
-  const lo = new Float64Array(N).fill(-lam);
-  const di = new Float64Array(N).fill(1 + 2 * lam);
-  const up = new Float64Array(N).fill(-lam);
-  di[0] = 1 + lam; di[N - 1] = 1 + lam; // Neumann Zero-flux BCs
+  const lo = new Float64Array(N_safe).fill(-lam);
+  const di = new Float64Array(N_safe).fill(1 + 2 * lam);
+  const up = new Float64Array(N_safe).fill(-lam);
+  di[0] = 1 + lam; di[N_safe - 1] = 1 + lam; // Neumann Zero-flux BCs
   
-  const nSteps = Math.round(T_end / dt);
+  // Guard loop iterations to protect UI thread responsiveness
+  let nSteps = Math.round(T_end / dt_safe);
+  if (nSteps > 200000) {
+    nSteps = 200000;
+  }
   const saveEvery = Math.max(1, Math.floor(nSteps / 80));
   const snaps = [Array.from(u)];
 
-  for (let s = 0; s < nSteps; s++) {
-    const rhs = new Float64Array(N);
-    for (let i = 0; i < N; i++) {
-      const l = i > 0 ? u[i-1] : u[i];
-      const rv = i < N-1 ? u[i+1] : u[i];
-      
-      let rxn = 0;
-      if (modelType === "allen") {
-        rxn = r * (u[i] - u[i] ** 3);
-      } else {
-        rxn = r * u[i] * (1 - u[i]); // default: Fisher-KPP
+  try {
+    for (let s = 0; s < nSteps; s++) {
+      const rhs = new Float64Array(N_safe);
+      for (let i = 0; i < N_safe; i++) {
+        const l = i > 0 ? u[i-1] : u[i];
+        const rv = i < N_safe-1 ? u[i+1] : u[i];
+        
+        let rxn = 0;
+        if (modelType === "allen") {
+          rxn = r_safe * (u[i] - u[i] ** 3);
+        } else {
+          rxn = r_safe * u[i] * (1 - u[i]); // default: Fisher-KPP
+        }
+        
+        rhs[i] = u[i] + lam * (l - 2 * u[i] + rv) + (dt_safe / 2) * rxn;
+        if (isNaN(rhs[i]) || !isFinite(rhs[i])) {
+          rhs[i] = 0.0;
+        }
       }
-      
-      rhs[i] = u[i] + lam * (l - 2 * u[i] + rv) + (dt / 2) * rxn;
+      const nextU = thomasSolve(lo, di, up, rhs);
+      for (let i = 0; i < N_safe; i++) {
+        u[i] = Math.min(1, Math.max(0, isNaN(nextU[i]) || !isFinite(nextU[i]) ? u[i] : nextU[i]));
+      }
+      if (s % saveEvery === 0) {
+        snaps.push(Array.from(u));
+      }
     }
-    u = new Float64Array(thomasSolve(lo, di, up, rhs));
-    if (s % saveEvery === 0) {
-      snaps.push(Array.from(u));
-    }
+  } catch (err) {
+    console.error("Implicit solver calculation failure:", err);
   }
+  
   if (snaps.length <= 80) snaps.push(Array.from(u));
   return { snaps, final: Array.from(u) };
 }
@@ -71,19 +230,26 @@ function solvePDE(D, r, mu, sig, modelType = "fisher", N = 128, dt = 5e-5, T_end
    FNO SURROGATE — Time-dependent Traveling Wave Operator Mapping
    ═══════════════════════════════════════════════════════════════════════════ */
 function fnoPredictTime(D, r, mu, sig, t, modelType = "fisher", N = 128) {
-  const dx = 1 / (N - 1);
-  let c = 2 * Math.sqrt(D * r);
-  let xi = Math.sqrt(r / (6 * D));
+  const N_safe = Math.max(3, Math.min(512, Math.round(N || 128)));
+  const D_safe = Math.max(1e-5, Math.min(10.0, D ?? 0.1));
+  const r_safe = Math.max(0.0, Math.min(50.0, r ?? 2.0));
+  const mu_safe = Math.max(0.001, Math.min(0.999, mu ?? 0.3));
+  const sig_safe = Math.max(0.001, Math.min(2.0, sig ?? 0.1));
+  const t_safe = Math.max(0.0, Math.min(10.0, t ?? 0.0));
+
+  const dx = 1 / (N_safe - 1);
+  let c = 2 * Math.sqrt(D_safe * r_safe);
+  let xi = Math.sqrt(r_safe / (6 * D_safe));
   
   if (modelType === "allen") {
-    c = 1.35 * Math.sqrt(D * r); // Allen-Cahn interfacial wave speed profile
-    xi = Math.sqrt(r / (2 * D));
+    c = 1.35 * Math.sqrt(D_safe * r_safe); // Allen-Cahn interfacial wave speed profile
+    xi = Math.sqrt(r_safe / (2 * D_safe));
   }
   
-  const front = mu + c * t;
-  return Array.from({ length: N }, (_, i) => {
+  const front = mu_safe + c * t_safe;
+  return Array.from({ length: N_safe }, (_, i) => {
     const x = i * dx;
-    const icVal = Math.min(1, Math.max(0, Math.exp(-0.5 * ((x - mu) / sig) ** 2)));
+    const icVal = Math.min(1, Math.max(0, Math.exp(-0.5 * ((x - mu_safe) / sig_safe) ** 2)));
     
     let wave = 0;
     if (modelType === "allen") {
@@ -92,9 +258,9 @@ function fnoPredictTime(D, r, mu, sig, t, modelType = "fisher", N = 128) {
       wave = 1 / (1 + Math.exp(-xi * 6 * (x - front))); // Fisher KPP wave front
     }
     
-    const blend = t === 0 ? 0 : Math.min(1, t * 1.5); // transition curve from Gaussian
+    const blend = t_safe === 0 ? 0 : Math.min(1, t_safe * 1.5); // transition curve from Gaussian
     const pred = (1 - blend) * icVal + blend * Math.min(1, Math.max(0, wave));
-    return Math.min(1, Math.max(0, pred));
+    return Math.min(1, Math.max(0, isNaN(pred) || !isFinite(pred) ? icVal : pred));
   });
 }
 
@@ -847,14 +1013,14 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
                 
                 <div className="modal-features-list">
                   <div className="feature-item-box">
-                    <span className="feat-ico">⚡</span>
+                    <span className="feat-ico"><IconDiagnostic /></span>
                     <div>
                       <h5 className="feat-title">Instantaneous Mapping</h5>
                       <p className="feat-desc">Inference in less than 0.1ms bypassing sequential tridiagonal integration steps.</p>
                     </div>
                   </div>
                   <div className="feature-item-box">
-                    <span className="feat-ico">📐</span>
+                    <span className="feat-ico"><IconMesh /></span>
                     <div>
                       <h5 className="feat-title">Mesh Independence</h5>
                       <p className="feat-desc">Evaluates boundary fields dynamically on arbitrary space-time resolutions (N=64 to 256).</p>
@@ -862,8 +1028,8 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
                   </div>
                 </div>
 
-                <button onClick={() => setShowIntro(false)} className="btn btn-primary btn-boot-enter">
-                  ▶ INITIALIZE OPERATOR SYSTEM
+                <button onClick={() => setShowIntro(false)} className="btn btn-primary btn-boot-enter" style={{ display: "inline-flex", alignItems: "center", gap: "8px", justifyContent: "center" }}>
+                  <IconPlay /> INITIALIZE OPERATOR SYSTEM
                 </button>
               </div>
             </div>
@@ -882,9 +1048,10 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
           </div>
           
           <div className="header-telemetry">
+            <VercelStatusBadge />
             <div className="tel-item">UPTIME: <span className="tel-val">{formatUptime(systemUptime)}</span></div>
             <div className="tel-item">ENGINE STATE: <span className="tel-val green">READY</span></div>
-            <button onClick={() => setShowIntro(true)} className="btn-icon-circular" title="Show Boot Parameters">ⓘ</button>
+            <button onClick={() => setShowIntro(true)} className="btn-icon-circular" title="Show Boot Parameters"><IconInfo /></button>
           </div>
         </div>
 
@@ -1033,16 +1200,16 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
 
             {/* Dynamic system control utilities */}
             <div className="sidebar-card deck-card dynamic-functions">
-              <button onClick={triggerSystemDiagnostic} className="btn btn-outline-cyan diag-btn">
-                ⚡ RUN SYSTEM DIAGNOSTIC SELF-CHECK
+              <button onClick={triggerSystemDiagnostic} className="btn btn-outline-cyan diag-btn" style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                <IconDiagnostic /> RUN SYSTEM DIAGNOSTIC SELF-CHECK
               </button>
               
               <div className="btn-grid-row">
-                <button onClick={exportConfigJSON} className="btn btn-outline-amber">
-                  ⚙️ EXPORT CONFIG (.json)
+                <button onClick={exportConfigJSON} className="btn btn-outline-amber" style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                  <IconExport /> EXPORT CONFIG (.json)
                 </button>
-                <button onClick={resetAll} className="btn btn-outline-purple">
-                  🧹 CLEAR CONSOLE
+                <button onClick={resetAll} className="btn btn-outline-purple" style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                  <IconClear /> CLEAR CONSOLE
                 </button>
               </div>
             </div>
@@ -1065,7 +1232,7 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
             <div className="modules-launcher-grid">
               
               <div onClick={() => { setActiveSheet("sim"); setActiveView("workstation"); }} className="launcher-card">
-                <div className="launcher-card-icon">⚡</div>
+                <div className="launcher-card-icon"><IconWaveform /></div>
                 <h4 className="launcher-card-name">1. Simulation Suite</h4>
                 <p className="launcher-card-desc">Compare 1D wavefront profiles, analyze pointwise error residuals, and render space-time isometric 3D surface propagations.</p>
                 <div className="launcher-card-footer">
@@ -1075,7 +1242,7 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
               </div>
 
               <div onClick={() => { setActiveSheet("mesh"); setActiveView("workstation"); }} className="launcher-card">
-                <div className="launcher-card-icon">📏</div>
+                <div className="launcher-card-icon"><IconMesh /></div>
                 <h4 className="launcher-card-name">2. Discretization Grid</h4>
                 <p className="launcher-card-desc">Test spatial boundary node densities, evaluate numerical convergence rates, and run randomized Monte Carlo uncertainty sweeps.</p>
                 <div className="launcher-card-footer">
@@ -1085,7 +1252,7 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
               </div>
 
               <div onClick={() => { setActiveSheet("data"); setActiveView("workstation"); }} className="launcher-card">
-                <div className="launcher-card-icon">📊</div>
+                <div className="launcher-card-icon"><IconChart /></div>
                 <h4 className="launcher-card-name">3. Laboratory Fitting</h4>
                 <p className="launcher-card-desc">Import experimental CSV coordinates data sheets, parse values, and compute pointwise error fits against surrogate predictions.</p>
                 <div className="launcher-card-footer">
@@ -1095,7 +1262,7 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
               </div>
 
               <div onClick={() => { setActiveSheet("doc"); setActiveView("workstation"); }} className="launcher-card">
-                <div className="launcher-card-icon">📚</div>
+                <div className="launcher-card-icon"><IconLibrary /></div>
                 <h4 className="launcher-card-name">4. Scientific Library</h4>
                 <p className="launcher-card-desc">Review Crank-Nicolson implicit equations, inspect neural operators spectral conv formulas, and download custom MD report files.</p>
                 <div className="launcher-card-footer">
@@ -1140,6 +1307,7 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
         </div>
         
         <div className="topbarRight">
+          <VercelStatusBadge />
           <span className="credentials">OPERATOR CONSOLE  ·  SURROGATE MODULE  ·  ONLINE</span>
           <div className="system-status">
             <div className="status-dot" />
@@ -1322,7 +1490,11 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
               className="btn btn-primary"
               style={{ height: "40px" }}
             >
-              {running ? "COMPUTING..." : "▶ RUN ANALYSIS"}
+              {running ? "COMPUTING..." : (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                  <IconPlay /> RUN ANALYSIS
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -1362,7 +1534,7 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
               <div className="sheet-content">
                 {!simDone && !running && (
                   <div className="text-center" style={{ padding: "80px 40px" }}>
-                    <div style={{ fontSize: "40px", marginBottom: "16px" }}>⚙️</div>
+                    <div style={{ marginBottom: "16px" }}><IconGear /></div>
                     <h3 style={{ fontSize: "16px", fontWeight: "700", marginBottom: "8px" }}>Workstation Ready</h3>
                     <p style={{ color: "var(--muted)", fontSize: "12px", maxWidth: "420px", margin: "0 auto 16px", lineHeight: "1.7" }}>
                       Configure spatial diffusion, reaction rates, and boundary fields in the parameters panel. Run numerical Crank-Nicolson models and evaluate instant FNO traveling wave predictions.
@@ -1377,7 +1549,7 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
 
                 {running && (
                   <div className="text-center" style={{ padding: "80px 40px" }}>
-                    <div style={{ fontSize: "32px", animation: "spin 2s linear infinite", marginBottom: "16px" }}>🌀</div>
+                    <div style={{ marginBottom: "16px" }}><IconSpinner /></div>
                     <h3 style={{ fontSize: "14px", fontWeight: "700", color: PAL.accentFno }}>SOLVING TRIDIAGONAL PDE MATRICES</h3>
                     <p style={{ color: PAL.muted, fontSize: "11px", marginTop: "4px" }}>
                       Integrating time trajectories across space mesh domain...
@@ -1449,21 +1621,23 @@ FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
                           className={`btn-icon ${animating ? "active" : ""}`}
                           title={animating ? "Pause Timeline" : "Play Propagation"}
                         >
-                          {animating ? "⏸" : "▶"}
+                          {animating ? <IconPause /> : <IconPlay />}
                         </button>
                         <button 
                           onClick={() => setTIndex(0)} 
                           className="btn-icon" 
+                          style={{ display: "inline-flex", alignItems: "center", gap: "4px", justifyContent: "center" }}
                           title="Reset to initial state"
                         >
-                          System Resets
+                          <IconRewind /> Reset
                         </button>
                         <button 
                           onClick={() => setTIndex(snaps.length - 1)} 
                           className="btn-icon" 
+                          style={{ display: "inline-flex", alignItems: "center", gap: "4px", justifyContent: "center" }}
                           title="Jump to final convergence state"
                         >
-                          System Jumps
+                          <IconFastForward /> Jump
                         </button>
                         <button 
                           onClick={() => setAnimSpeed(prev => prev === 1 ? 2 : prev === 2 ? 5 : prev === 5 ? 10 : 1)}
