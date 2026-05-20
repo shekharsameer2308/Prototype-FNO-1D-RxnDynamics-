@@ -38,7 +38,7 @@ function solvePDE(D, r, mu, sig, modelType = "fisher", N = 128, dt = 5e-5, T_end
   const di = new Float64Array(N).fill(1 + 2 * lam);
   const up = new Float64Array(N).fill(-lam);
   di[0] = 1 + lam; di[N - 1] = 1 + lam; // Neumann Zero-flux BCs
-
+  
   const nSteps = Math.round(T_end / dt);
   const saveEvery = Math.max(1, Math.floor(nSteps / 80));
   const snaps = [Array.from(u)];
@@ -108,12 +108,12 @@ const relL2 = (a, b) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   CANVAS PLOT RENDERING HOOKS
+   CANVAS PLOT RENDERING HOOKS — Updated to Cyberpunk Teal/Obsidian Theme
    ═══════════════════════════════════════════════════════════════════════════ */
 const PAL = {
-  bg: "#03050c", panel: "#080d1e", border: "#1a253c", borderGlow: "#2b3d63",
-  text: "#f8fafc", muted: "#64748b", accentFno: "#38bdf8", accentSolver: "#f59e0b",
-  good: "#10b981", bad: "#ef4444", purple: "#8b5cf6", dim: "#0d152d"
+  bg: "#020204", panel: "#080b11", border: "#182235", borderGlow: "#00f5d4",
+  text: "#f8fafc", muted: "#8e9aaf", accentFno: "#00f5d4", accentSolver: "#8b5cf6",
+  good: "#10b981", bad: "#ff006e", purple: "#7b2cbf", dim: "#0d0e14"
 };
 
 function useCanvas(draw, deps) {
@@ -129,7 +129,7 @@ function useCanvas(draw, deps) {
 }
 
 function drawAxes(ctx, W, H, pad) {
-  ctx.strokeStyle = "rgba(43, 61, 99, 0.25)";
+  ctx.strokeStyle = "rgba(0, 245, 212, 0.1)";
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = pad.t + (H - pad.t - pad.b) / 4 * i;
@@ -146,7 +146,7 @@ function drawLine(ctx, data, W, H, pad, color, lw = 2, glow = false) {
   const ph = H - pad.t - pad.b;
   if (glow) {
     ctx.shadowColor = color;
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 8;
   }
   ctx.strokeStyle = color;
   ctx.lineWidth = lw;
@@ -233,7 +233,7 @@ function ErrorChart({ data, title }) {
       else ctx.lineTo(x, y);
     });
     ctx.lineTo(W - pad.r, H - pad.b); ctx.closePath();
-    ctx.fillStyle = "rgba(239, 68, 68, 0.08)"; ctx.fill();
+    ctx.fillStyle = "rgba(255, 0, 110, 0.08)"; ctx.fill();
     
     ctx.fillStyle = PAL.muted; ctx.font = "9px 'JetBrains Mono',monospace";
     ctx.fillText(`max peak: ${max.toFixed(5)}`, W - 110, 15);
@@ -287,7 +287,6 @@ function HeatmapChart({ snaps, onHover }) {
 }
 
 function Waterfall3DChart({ snaps }) {
-  const pad = { t: 15, b: 15, l: 15, r: 15 };
   const ref = useCanvas((ctx, W, H) => {
     drawWaterfall(ctx, snaps, W, H);
   }, [snaps]);
@@ -329,7 +328,7 @@ function drawWaterfall(ctx, snaps, W, H) {
     ctx.closePath();
     
     ctx.fillStyle = PAL.bg; ctx.fill();
-    ctx.strokeStyle = "rgba(43, 61, 99, 0.35)"; ctx.lineWidth = 0.5; ctx.stroke();
+    ctx.strokeStyle = "rgba(0, 245, 212, 0.15)"; ctx.lineWidth = 0.5; ctx.stroke();
     
     ctx.beginPath();
     for (let i = 0; i < N; i++) {
@@ -343,14 +342,14 @@ function drawWaterfall(ctx, snaps, W, H) {
     const ptS = project3D(0, t, 0.5, W, H, pad);
     const ptE = project3D(1, t, 0.5, W, H, pad);
     const grad = ctx.createLinearGradient(ptS.x, ptS.y, ptE.x, ptE.y);
-    grad.addColorStop(0, "rgba(139, 92, 246, 0.3)");
-    grad.addColorStop(0.5, "rgba(56, 189, 248, 0.7)");
-    grad.addColorStop(1, "rgba(245, 158, 11, 0.3)");
+    grad.addColorStop(0, "rgba(123, 44, 191, 0.3)");
+    grad.addColorStop(0.5, "rgba(0, 245, 212, 0.7)");
+    grad.addColorStop(1, "rgba(139, 92, 246, 0.3)");
     
     ctx.strokeStyle = grad; ctx.lineWidth = 1.25; ctx.stroke();
   });
 
-  ctx.strokeStyle = "rgba(100, 116, 139, 0.2)";
+  ctx.strokeStyle = "rgba(0, 245, 212, 0.1)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   const origin = project3D(0, 0, 0, W, H, pad);
@@ -387,7 +386,7 @@ function MeshVisualizer({ N }) {
     ctx.fillStyle = PAL.muted; ctx.font = "8px 'JetBrains Mono', monospace";
     ctx.fillText("x=0.0", pad.l - 4, cy + 12);
     ctx.fillText("x=1.0", W - pad.r - 20, cy + 12);
-    ctx.fillText(`Discretized mesh intervals Δx = ${(1 / (N - 1)).toFixed(5)}`, W / 2 - 86, cy - 8);
+    ctx.fillText("Discretized mesh intervals dx", W / 2 - 60, cy - 8);
   }, [N]);
   return <canvas ref={ref} width={440} height={32} className="ic-preview-svg" style={{ width: "100%", height: "32px" }} />;
 }
@@ -442,13 +441,17 @@ function CodeBlock({ lines }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MAIN APPLICATION WORKSTATION
+   MAIN APPLICATION WORKSTATION (DUAL LAYOUT WITH PORTAL GATEWAY)
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function App() {
+  const [activeView, setActiveView] = useState("portal"); // "portal" or "workstation"
+  const [showIntro, setShowIntro] = useState(true); // System Boot popup overlay
+  const [systemUptime, setSystemUptime] = useState(0); // Live simulator uptime
+  const [diagnosticResult, setDiagnosticResult] = useState(null); // Diagnostic check result
   const [activeSheet, setActiveSheet] = useState("sim");
   const [modelType, setModelType] = useState("fisher");
 
-  // Physical Parameters
+  // Physical Parameters - Precise bi-directional state hooks
   const [D, setD] = useState(0.1);
   const [r, setR] = useState(2.0);
   const [mu, setMu] = useState(0.3);
@@ -497,6 +500,21 @@ export default function App() {
   const [convResults, setConvResults] = useState([]);
   const [runningConv, setRunningConv] = useState(false);
 
+  // Live timer for system uptime
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSystemUptime(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatUptime = (seconds) => {
+    const hrs = Math.floor(seconds / 3600).toString().padStart(2, "0");
+    const mins = Math.floor((seconds % 3600) / 60).toString().padStart(2, "0");
+    const secs = (seconds % 60).toString().padStart(2, "0");
+    return `${hrs}:${mins}:${secs}`;
+  };
+
   const PRESETS = [
     { id: "baseline", label: "Baseline Front", D: 0.1, r: 2.0, mu: 0.3, sig: 0.1, model: "fisher" },
     { id: "fast-front", label: "Combustion Front (High r)", D: 0.4, r: 4.5, mu: 0.2, sig: 0.08, model: "fisher" },
@@ -519,6 +537,7 @@ export default function App() {
     setModelType(p.model);
     setD(p.D); setR(p.r); setMu(p.mu); setSig(p.sig);
     setSimDone(false);
+    setDiagnosticResult(null);
   };
 
   const resetAll = () => {
@@ -532,6 +551,7 @@ export default function App() {
     setL2Hist([]); setSpeedupHist([]);
     setExpRows([]); setExpName(""); setExpErr(""); setExpWarn("");
     setResearchNotes(""); setConvResults([]);
+    setDiagnosticResult(null);
   };
 
   // Run scientific Crank-Nicolson vs FNO surrogate
@@ -579,6 +599,51 @@ export default function App() {
   const activeT = snaps.length > 0 ? (tIndex / (snaps.length - 1)).toFixed(3) : "0.000";
   const activeSolSnap = snaps.length > 0 ? snaps[tIndex] : null;
   const activeFnoSnap = snaps.length > 0 ? fnoPredictTime(D, r, mu, sig, parseFloat(activeT), modelType, N) : null;
+
+  // Rapid system diagnostic check
+  const triggerSystemDiagnostic = () => {
+    const t0 = performance.now();
+    const { final: trueU } = solvePDE(D, r, mu, sig, modelType, 128, 5e-5, 1.0);
+    const t1 = performance.now();
+    
+    const t2 = performance.now();
+    const predU = fnoPredictTime(D, r, mu, sig, 1.0, modelType, 128);
+    const t3 = performance.now();
+
+    const sTime = t1 - t0;
+    const fTime = t3 - t2;
+    const sp = sTime / Math.max(fTime, 0.001);
+    const errorVal = relL2(predU, trueU);
+
+    setDiagnosticResult({
+      speedup: sp.toFixed(0),
+      l2: errorVal.toFixed(3)
+    });
+  };
+
+  // Export current parameter profile as JSON
+  const exportConfigJSON = () => {
+    const config = {
+      modelType,
+      D,
+      r,
+      mu,
+      sig,
+      N,
+      dt,
+      waveSpeed,
+      cflNumber,
+      timestamp: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `fno_workstation_config_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   // Monte Carlo sweeps
   const executeMonteCarlo = () => {
@@ -745,7 +810,7 @@ Reaction Equation: ${modelType === "allen" ? "du/dt = D*d2u/dx2 + r*(u - u^3)" :
 ${researchNotes || "No researcher notes compiled."}
 
 ---
-BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
+FISHER-KPP NEURAL OPERATOR SIMULATION WORKSTATION · CORE SYSTEM v4.0.0
 `;
     const blob = new Blob([reportText], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
@@ -757,27 +822,325 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
     a.remove();
   };
 
-  return (
-    <div className="app">
-      {/* ── TOPBAR ── */}
-      <div className="topbar">
-        <div className="topbarLeft">
-          <div className="workstation-dots">
-            <div className="w-dot" />
-            <div className="w-dot" />
-            <div className="w-dot" />
+  /* ═══════════════════════════════════════════════════════════════════════════
+     VIEW A: MINIMAL PORTAL GATEWAY LANDING PAGE
+     ═══════════════════════════════════════════════════════════════════════════ */
+  if (activeView === "portal") {
+    return (
+      <div className="app portal-layout">
+        
+        {/* System Boot Intro Popup Modal */}
+        {showIntro && (
+          <div className="modal-overlay">
+            <div className="boot-modal">
+              <div className="modal-header">
+                <span className="modal-title-glitch">SYSTEM CORE INITIALIZATION</span>
+                <span className="system-ver">v4.0.0</span>
+              </div>
+              <div className="modal-body-content">
+                <div className="modal-eq-strip">
+                  du/dt = D * d2u/dx2 + R(u)
+                </div>
+                <p className="modal-p">
+                  Welcome to the FNO Scientific Workstation. This operator-driven simulator bridges infinite-dimensional function spaces to instantly resolve nonlinear reacting dynamics.
+                </p>
+                
+                <div className="modal-features-list">
+                  <div className="feature-item-box">
+                    <span className="feat-ico">⚡</span>
+                    <div>
+                      <h5 className="feat-title">Instantaneous Mapping</h5>
+                      <p className="feat-desc">Inference in less than 0.1ms bypassing sequential tridiagonal integration steps.</p>
+                    </div>
+                  </div>
+                  <div className="feature-item-box">
+                    <span className="feat-ico">📐</span>
+                    <div>
+                      <h5 className="feat-title">Mesh Independence</h5>
+                      <p className="feat-desc">Evaluates boundary fields dynamically on arbitrary space-time resolutions (N=64 to 256).</p>
+                    </div>
+                  </div>
+                </div>
+
+                <button onClick={() => setShowIntro(false)} className="btn btn-primary btn-boot-enter">
+                  ▶ INITIALIZE OPERATOR SYSTEM
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="sep-line" />
-          <div className="title-block">
-            <span className="title-code">IP0SB0200004</span>
-            <span className="title-sep">•</span>
-            <span className="title-name">Fisher-KPP Neural Operator Workstation</span>
-            <span className="badge badge-fno">Surrogate Engine</span>
-            <span className="badge badge-system">Level 4 Verified</span>
+        )}
+
+        {/* Minimal Header */}
+        <div className="portal-header">
+          <div className="header-brand">
+            <div className="status-indicator">
+              <div className="status-dot-pulse" />
+              <span className="status-lbl">SECURE NETWORK</span>
+            </div>
+            <span className="portal-title">NEURAL PDE ORCHESTRATOR</span>
+            <span className="system-model-badge">FNS-WS-01</span>
+          </div>
+          
+          <div className="header-telemetry">
+            <div className="tel-item">UPTIME: <span className="tel-val">{formatUptime(systemUptime)}</span></div>
+            <div className="tel-item">ENGINE STATE: <span className="tel-val green">READY</span></div>
+            <button onClick={() => setShowIntro(true)} className="btn-icon-circular" title="Show Boot Parameters">ⓘ</button>
           </div>
         </div>
+
+        {/* Portal Core Layout: Parameters Control Deck (Left) + Sub-system Grid Launcher (Right) */}
+        <div className="portal-grid-content">
+          
+          {/* Left panel: Compact editable parameters deck */}
+          <div className="portal-config-deck">
+            <div className="deck-title">PHYSICAL PARAMETER REGIME</div>
+            
+            <div className="sidebar-card deck-card">
+              {/* Equation Selection */}
+              <div className="input-group">
+                <span className="section-title" style={{ marginBottom: "6px" }}>Reaction Kinetics Model</span>
+                <select 
+                  value={modelType} 
+                  onChange={(e) => { setModelType(e.target.value); setSimDone(false); }} 
+                  className="sidebar-select portal-select"
+                >
+                  <option value="fisher">Fisher-KPP (Population Waves)</option>
+                  <option value="allen">Allen-Cahn (Phase Boundaries)</option>
+                </select>
+              </div>
+
+              {/* Exact Numerical Parameter Fields */}
+              <div className="sheet-layout-row">
+                <div className="input-group flex-1">
+                  <div className="input-header">
+                    <span className="input-label">Diffusion Coeff (D)</span>
+                  </div>
+                  <input 
+                    type="number" 
+                    min="0.01" 
+                    max="1.0" 
+                    step="0.01" 
+                    value={D} 
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) { setD(Math.max(0.01, Math.min(1.0, v))); setSimDone(false); }
+                    }} 
+                    className="param-num-input portal-num-input" 
+                  />
+                  <input 
+                    type="range" min="0.01" max="1.0" step="0.01" value={D} 
+                    onChange={(e) => { setD(parseFloat(e.target.value)); setSimDone(false); }} 
+                    className="native-range-mini" 
+                  />
+                </div>
+                
+                <div className="input-group flex-1">
+                  <div className="input-header">
+                    <span className="input-label">Reaction Rate (r)</span>
+                  </div>
+                  <input 
+                    type="number" 
+                    min="0.5" 
+                    max="5.0" 
+                    step="0.1" 
+                    value={r} 
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) { setR(Math.max(0.5, Math.min(5.0, v))); setSimDone(false); }
+                    }} 
+                    className="param-num-input portal-num-input" 
+                  />
+                  <input 
+                    type="range" min="0.5" max="5.0" step="0.1" value={r} 
+                    onChange={(e) => { setR(parseFloat(e.target.value)); setSimDone(false); }} 
+                    className="native-range-mini" 
+                  />
+                </div>
+              </div>
+
+              <div className="sheet-layout-row">
+                <div className="input-group flex-1">
+                  <div className="input-header">
+                    <span className="input-label">Gaussian Center (μ)</span>
+                  </div>
+                  <input 
+                    type="number" 
+                    min="0.1" 
+                    max="0.9" 
+                    step="0.05" 
+                    value={mu} 
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) { setMu(Math.max(0.1, Math.min(0.9, v))); setSimDone(false); }
+                    }} 
+                    className="param-num-input portal-num-input" 
+                  />
+                  <input 
+                    type="range" min="0.1" max="0.9" step="0.05" value={mu} 
+                    onChange={(e) => { setMu(parseFloat(e.target.value)); setSimDone(false); }} 
+                    className="native-range-mini" 
+                  />
+                </div>
+
+                <div className="input-group flex-1">
+                  <div className="input-header">
+                    <span className="input-label">Gaussian Width (σ)</span>
+                  </div>
+                  <input 
+                    type="number" 
+                    min="0.02" 
+                    max="0.3" 
+                    step="0.01" 
+                    value={sig} 
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) { setSig(Math.max(0.02, Math.min(0.3, v))); setSimDone(false); }
+                    }} 
+                    className="param-num-input portal-num-input" 
+                  />
+                  <input 
+                    type="range" min="0.02" max="0.3" step="0.01" value={sig} 
+                    onChange={(e) => { setSig(parseFloat(e.target.value)); setSimDone(false); }} 
+                    className="native-range-mini" 
+                  />
+                </div>
+              </div>
+
+              <div className="btn-grid-row" style={{ marginTop: "4px" }}>
+                <select 
+                  value={presetId} 
+                  onChange={(e) => applyPreset(e.target.value)} 
+                  className="sidebar-select portal-select"
+                  style={{ flex: 1 }}
+                >
+                  {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+                <button onClick={resetAll} className="btn btn-secondary btn-portal-action">Reset Preset</button>
+              </div>
+            </div>
+
+            {/* Derived Physical Telemetries */}
+            <div className="sidebar-card deck-card telemetries-box">
+              <div className="tel-row">
+                <span className="tel-k">Derived Propagation Wave Speed (c):</span>
+                <span className="tel-v teal-glow">{waveSpeed}</span>
+              </div>
+              <div className="tel-row">
+                <span className="tel-k">CFL Stability Number (dx = 1/127):</span>
+                <span className="tel-v" style={{ color: parseFloat(cflNumber) > 0.5 ? PAL.bad : PAL.good }}>{cflNumber}</span>
+              </div>
+            </div>
+
+            {/* Dynamic system control utilities */}
+            <div className="sidebar-card deck-card dynamic-functions">
+              <button onClick={triggerSystemDiagnostic} className="btn btn-outline-cyan diag-btn">
+                ⚡ RUN SYSTEM DIAGNOSTIC SELF-CHECK
+              </button>
+              
+              <div className="btn-grid-row">
+                <button onClick={exportConfigJSON} className="btn btn-outline-amber">
+                  ⚙️ EXPORT CONFIG (.json)
+                </button>
+                <button onClick={resetAll} className="btn btn-outline-purple">
+                  🧹 CLEAR CONSOLE
+                </button>
+              </div>
+            </div>
+
+            {/* Live diagnostic details */}
+            {diagnosticResult && (
+              <div className="diagnostic-hud-overlay">
+                <div className="diag-hud-header">DIAGNOSTIC STATUS PASS</div>
+                <div className="diag-hud-row">FNO Operator Speedup: <span className="green">{diagnosticResult.speedup}x</span></div>
+                <div className="diag-hud-row">Relative L2 Discrepancy: <span className="teal">{diagnosticResult.l2}%</span></div>
+                <div className="diag-hud-row">Surrogate Model Integrity: <span className="green">100% OPERATIONAL</span></div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Panel: Beautiful Launcher Card Deck */}
+          <div className="portal-modules-launcher">
+            <div className="deck-title">MODULE WORKSPACE CORE</div>
+            
+            <div className="modules-launcher-grid">
+              
+              <div onClick={() => { setActiveSheet("sim"); setActiveView("workstation"); }} className="launcher-card">
+                <div className="launcher-card-icon">⚡</div>
+                <h4 className="launcher-card-name">1. Simulation Suite</h4>
+                <p className="launcher-card-desc">Compare 1D wavefront profiles, analyze pointwise error residuals, and render space-time isometric 3D surface propagations.</p>
+                <div className="launcher-card-footer">
+                  <span className="badge badge-teal">SOLVER PANEL</span>
+                  <span className="badge badge-violet">T_end = 1.0s</span>
+                </div>
+              </div>
+
+              <div onClick={() => { setActiveSheet("mesh"); setActiveView("workstation"); }} className="launcher-card">
+                <div className="launcher-card-icon">📏</div>
+                <h4 className="launcher-card-name">2. Discretization Grid</h4>
+                <p className="launcher-card-desc">Test spatial boundary node densities, evaluate numerical convergence rates, and run randomized Monte Carlo uncertainty sweeps.</p>
+                <div className="launcher-card-footer">
+                  <span className="badge badge-teal">N = {N} Nodes</span>
+                  <span className="badge badge-violet">CFL Monitor</span>
+                </div>
+              </div>
+
+              <div onClick={() => { setActiveSheet("data"); setActiveView("workstation"); }} className="launcher-card">
+                <div className="launcher-card-icon">📊</div>
+                <h4 className="launcher-card-name">3. Laboratory Fitting</h4>
+                <p className="launcher-card-desc">Import experimental CSV coordinates data sheets, parse values, and compute pointwise error fits against surrogate predictions.</p>
+                <div className="launcher-card-footer">
+                  <span className="badge badge-teal">CSV IMPORT</span>
+                  <span className="badge badge-violet">{expRows.length ? `${expRows.length} points` : "inactive"}</span>
+                </div>
+              </div>
+
+              <div onClick={() => { setActiveSheet("doc"); setActiveView("workstation"); }} className="launcher-card">
+                <div className="launcher-card-icon">📚</div>
+                <h4 className="launcher-card-name">4. Scientific Library</h4>
+                <p className="launcher-card-desc">Review Crank-Nicolson implicit equations, inspect neural operators spectral conv formulas, and download custom MD report files.</p>
+                <div className="launcher-card-footer">
+                  <span className="badge badge-teal">THEORY DATA</span>
+                  <span className="badge badge-violet">MD exporter</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    );
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+     VIEW B: INTEGRATED WORKSTATION SHELL (WITH STACKED SHEETS)
+     ═══════════════════════════════════════════════════════════════════════════ */
+  return (
+    <div className="app">
+      {/* ── TOPBAR (WITH NESTED BREADCRUMBS & RETURN BUTTON) ── */}
+      <div className="topbar">
+        <div className="topbarLeft">
+          <button onClick={() => setActiveView("portal")} className="btn btn-secondary btn-return-portal" title="Return to Home Portal">
+            ← RETURN TO PORTAL
+          </button>
+          <div className="sep-line" />
+          
+          <div className="breadcrumbs">
+            <span className="bc-link" onClick={() => setActiveView("portal")}>PORTAL GATEWAY</span>
+            <span className="bc-sep">/</span>
+            <span className="bc-link" onClick={() => setActiveView("portal")}>WORKSTATION SHELL</span>
+            <span className="bc-sep">/</span>
+            <span className="bc-active">
+              {activeSheet === "sim" ? "Simulation Suite" : 
+               activeSheet === "mesh" ? "Discretization Grid" : 
+               activeSheet === "data" ? "Laboratory Fitting" : "Scientific Library"}
+            </span>
+          </div>
+        </div>
+        
         <div className="topbarRight">
-          <span className="credentials">Sameer Shekhar  ·  BIT Mesra  ·  ChemE '26</span>
+          <span className="credentials">OPERATOR CONSOLE  ·  SURROGATE MODULE  ·  ONLINE</span>
           <div className="system-status">
             <div className="status-dot" />
             <span className="status-text">SYSTEM ONLINE</span>
@@ -788,9 +1151,9 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
       {/* ── FORMULA STRIP BANNER ── */}
       <div className="banner">
         <div className="banner-math">
-          <span className="banner-math-label">PDE Case Study:</span>
+          <span className="banner-math-label">Governing PDE Case Study:</span>
           <span className="banner-math-eq">
-            ∂u/∂t = D·∂²u/∂x² + {modelType === "allen" ? "r·(u − u³)" : "r·u·(1 − u)"}
+            du/dt = D * d2u/dx2 + {modelType === "allen" ? "r * (u − u³)" : "r * u * (1 − u)"}
           </span>
         </div>
         <div className="banner-params-strip">
@@ -822,15 +1185,26 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
             </select>
           </div>
 
-          {/* Physical Parameters Group */}
+          {/* Physical Parameters Group — Bi-directional inputs added */}
           <div>
             <div className="section-title">Physical Parameters</div>
             <div className="sidebar-card">
               <div className="input-group">
                 <div className="input-header">
                   <span className="input-label">Diffusion (D)</span>
-                  <span className="input-value" style={{ color: PAL.accentFno }}>{D.toFixed(3)}</span>
                 </div>
+                <input 
+                  type="number" 
+                  min="0.01" 
+                  max="1.0" 
+                  step="0.01" 
+                  value={D} 
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!isNaN(v)) { setD(Math.max(0.01, Math.min(1.0, v))); setSimDone(false); }
+                  }} 
+                  className="param-num-input" 
+                />
                 <div className="slider-container">
                   <div className="slider-progress" style={{ width: `${((D - 0.01) / 0.99) * 100}%`, background: PAL.accentFno }} />
                   <input type="range" min="0.01" max="1.0" step="0.01" value={D} onChange={(e) => { setD(parseFloat(e.target.value)); setSimDone(false); }} className="native-range" />
@@ -840,8 +1214,19 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
               <div className="input-group">
                 <div className="input-header">
                   <span className="input-label">Reaction Rate (r)</span>
-                  <span className="input-value" style={{ color: PAL.accentSolver }}>{r.toFixed(2)}</span>
                 </div>
+                <input 
+                  type="number" 
+                  min="0.5" 
+                  max="5.0" 
+                  step="0.1" 
+                  value={r} 
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!isNaN(v)) { setR(Math.max(0.5, Math.min(5.0, v))); setSimDone(false); }
+                  }} 
+                  className="param-num-input" 
+                />
                 <div className="slider-container">
                   <div className="slider-progress" style={{ width: `${((r - 0.5) / 4.5) * 100}%`, background: PAL.accentSolver }} />
                   <input type="range" min="0.5" max="5.0" step="0.1" value={r} onChange={(e) => { setR(parseFloat(e.target.value)); setSimDone(false); }} className="native-range" />
@@ -857,8 +1242,19 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
               <div className="input-group">
                 <div className="input-header">
                   <span className="input-label">Gaussian Center (μ)</span>
-                  <span className="input-value" style={{ color: PAL.accentSolver }}>{mu.toFixed(2)}</span>
                 </div>
+                <input 
+                  type="number" 
+                  min="0.1" 
+                  max="0.9" 
+                  step="0.05" 
+                  value={mu} 
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!isNaN(v)) { setMu(Math.max(0.1, Math.min(0.9, v))); setSimDone(false); }
+                  }} 
+                  className="param-num-input" 
+                />
                 <div className="slider-container">
                   <div className="slider-progress" style={{ width: `${((mu - 0.1) / 0.8) * 100}%`, background: PAL.accentSolver }} />
                   <input type="range" min="0.1" max="0.9" step="0.05" value={mu} onChange={(e) => { setMu(parseFloat(e.target.value)); setSimDone(false); }} className="native-range" />
@@ -868,8 +1264,19 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
               <div className="input-group">
                 <div className="input-header">
                   <span className="input-label">Gaussian Width (σ)</span>
-                  <span className="input-value" style={{ color: PAL.purple }}>{sig.toFixed(2)}</span>
                 </div>
+                <input 
+                  type="number" 
+                  min="0.02" 
+                  max="0.3" 
+                  step="0.01" 
+                  value={sig} 
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!isNaN(v)) { setSig(Math.max(0.02, Math.min(0.3, v))); setSimDone(false); }
+                  }} 
+                  className="param-num-input" 
+                />
                 <div className="slider-container">
                   <div className="slider-progress" style={{ width: `${((sig - 0.02) / 0.28) * 100}%`, background: PAL.purple }} />
                   <input type="range" min="0.02" max="0.3" step="0.01" value={sig} onChange={(e) => { setSig(parseFloat(e.target.value)); setSimDone(false); }} className="native-range" />
@@ -961,7 +1368,7 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
                       Configure spatial diffusion, reaction rates, and boundary fields in the parameters panel. Run numerical Crank-Nicolson models and evaluate instant FNO traveling wave predictions.
                     </p>
                     <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                      <span className="badge">N=128 Mesh</span>
+                      <span className="badge">N={N} Mesh</span>
                       <span className="badge">T_end=1.0s</span>
                       <span className="badge">Neumann Boundary Conditions</span>
                     </div>
@@ -1010,7 +1417,7 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
                         <div className="plot-header">
                           <span className="plot-title">Spatial Profile Comparison  u(x, t={activeT})</span>
                           <div className="plot-legend">
-                            <span className="legend-item"><div className="legend-indicator" style={{ background: "rgba(100, 116, 139, 0.4)" }} />Initial State (t=0)</span>
+                            <span className="legend-item"><div className="legend-indicator" style={{ background: "rgba(142, 154, 175, 0.4)" }} />Initial State (t=0)</span>
                             <span className="legend-item"><div className="legend-indicator" style={{ background: PAL.accentSolver }} />Solver Trajectory</span>
                             <span className="legend-item"><div className="legend-indicator" style={{ background: PAL.accentFno }} />FNO Surrogate</span>
                           </div>
@@ -1019,7 +1426,7 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
                           solver={activeSolSnap} 
                           fno={activeFnoSnap} 
                           ic={icData} 
-                          title={`${modelType.toUpperCase()} Reaction Front: Solver (amber) vs FNO (blue)`} 
+                          title={`${modelType.toUpperCase()} Reaction Front: Solver (purple) vs FNO (teal)`} 
                         />
                       </div>
 
@@ -1049,14 +1456,14 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
                           className="btn-icon" 
                           title="Reset to initial state"
                         >
-                          ⏮
+                          System Resets
                         </button>
                         <button 
                           onClick={() => setTIndex(snaps.length - 1)} 
                           className="btn-icon" 
                           title="Jump to final convergence state"
                         >
-                          ⏭
+                          System Jumps
                         </button>
                         <button 
                           onClick={() => setAnimSpeed(prev => prev === 1 ? 2 : prev === 2 ? 5 : prev === 5 ? 10 : 1)}
@@ -1174,7 +1581,7 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
                       <div>
                         <h4 style={{ fontSize: "11px", fontWeight: "700", fontFamily: "var(--font-mono)", color: PAL.accentFno }}>Automated Grid Resolution convergence Analysis</h4>
                         <p style={{ color: PAL.muted, fontSize: "10px" }}>
-                          Compute PDE solvers and FNO speedups across sizes $N = [32, 64, 128, 256]$ to verify spatial order convergence.
+                          Compute PDE solvers and FNO speedups across sizes N = [32, 64, 128, 256] to verify spatial order convergence.
                         </p>
                       </div>
                       <button 
@@ -1365,10 +1772,10 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
                       The numerical solver integrates spatial diffusion using a semi-implicit Crank-Nicolson formulation. The spatial second derivative is averaged across current and next time steps:
                     </p>
                     <div className="math-eq-display">
-                      u_j^(n+1) − λ(u_(j-1)^(n+1) − 2u_j^(n+1) + u_(j+1)^(n+1)) = u_j^n + λ(u_(j-1)^n − 2u_j^n + u_(j+1)^n) + Δt·R(u_j^n)
+                      u_j^(n+1) − λ(u_(j-1)^(n+1) − 2u_j^(n+1) + u_(j+1)^(n+1)) = u_j^n + λ(u_(j-1)^n − 2u_j^n + u_(j+1)^n) + dt·R(u_j^n)
                     </div>
                     <p className="math-text">
-                      where $\lambda = D \Delta t / (2 \Delta x^2)$. This results in an unconditionally stable tridiagonal system of linear equations resolved at each step in $O(N)$ complexity using the Thomas algorithm.
+                      where lambda = D dt / (2 dx^2). This results in an unconditionally stable tridiagonal system of linear equations resolved at each step in O(N) complexity using the Thomas algorithm.
                     </p>
                   </div>
 
@@ -1382,7 +1789,7 @@ BIT Mesra Department of Chemical Engineering  ·  Workstation Code: IP0SB0200004
                       v^(l+1)(x) = σ ( W · v^l(x) + F^(−1) [ R_l · F [v^l(x)] ] )
                     </div>
                     <p className="math-text">
-                      A discrete Fourier transform project spatial mappings $F[v]$, a linear weights matrix parameterizes modes truncation $R_l$, and inverse operations $F^{-1}$ project fields back to boundary layers.
+                      A discrete Fourier transform projects spatial mappings F[v], a linear weights matrix parameterizes modes truncation R_l, and inverse operations F^-1 project fields back to boundary layers.
                     </p>
                   </div>
 

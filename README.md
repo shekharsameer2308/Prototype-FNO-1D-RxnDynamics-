@@ -5,7 +5,6 @@ Fourier Neural Operator (FNO) surrogate model for simulating 1D reaction-diffusi
 ## Deployments
 
 * **Live Demo:** [https://fnoproject.vercel.app](https://fnoproject.vercel.app)
-* **Backup Mirror:** [https://shekharsameer2308.github.io/Prototype-FNO-1D-RxnDynamics-/](https://shekharsameer2308.github.io/Prototype-FNO-1D-RxnDynamics-/)
 
 ---
 
@@ -216,8 +215,42 @@ python model/train.py
 
 ---
 
+## System Design & Component Architecture
+
+The FNO Scientific Workstation is designed as a modular, high-fidelity client-side environment with clean separation between numerical solver kernels, deep surrogate models, and state management controllers.
+
+```mermaid
+graph TD
+    UI[React Interface Engine]
+    State[Decoupled State Manager]
+    Solver[Continuous Crank-Nicolson Solver Layer]
+    Surrogate[Fourier Neural Operator Surrogate Predictor]
+    Canvas[HTML5 High-Performance Canvas Rendering Pipeline]
+
+    UI --> State
+    State <--> Solver
+    State <--> Surrogate
+    State --> Canvas
+```
+
+### 1. Client-Side Decoupled State Engine
+To maintain high responsiveness during live parametrization, all model presets, spatial discretization nodes, temporal intervals, and Monte Carlo sweeps are managed independently of the UI thread where possible. React handles decoupled states (such as active module tabs, parameter matrices, and simulation matrices) and triggers lazy-recalculations only when input params (like $D, r$) or mesh variables change, ensuring zero unnecessary visual redraw overhead.
+
+### 2. Continuous Solver Layer
+The numerical backend solves the Crank-Nicolson formulation in $O(N)$ operations. The finite-difference discretization is constructed dynamically, allowing instant resolution switches from $N=64$ nodes up to $N=256$ nodes. At each numerical increment, the boundary Neumann zero-flux fields are strictly enforced on a tridiagonal coefficient matrix solved via the Thomas algorithm, yielding an exceptionally robust baseline solver.
+
+### 3. Residuals & Error Analysis Pipeline
+Upon obtaining numerical and surrogate concentration profiles at $T_{end}$, a pointwise error estimation pipeline computes absolute pointwise errors $|u_{\text{num}}(x) - u_{\text{fno}}(x)|$ and the Mean Absolute Error (MAE):
+
+$$\text{MAE} = \frac{1}{N} \sum_{i=1}^N |u_{\text{num}}(x_i) - u_{\text{fno}}(x_i)|$$
+
+These residuals are automatically synced to HTML5 Canvas buffers which use high-performance pixel drawing loops to render dynamic graphs, pointwise errors, and 3D space-time solution waterfalls directly in the browser viewport.
+
+---
+
 ## References
 
 * Li, Z. et al. (2020). *Fourier Neural Operator for Parametric Partial Differential Equations*. arXiv preprint arXiv:2010.08895.
 * Neural Operator Library: [https://github.com/neuraloperator/neuraloperator](https://github.com/neuraloperator/neuraloperator)
 * Fisher, R. A. (1937). *The wave of advance of advantageous genes*. Annals of Eugenics, 7(4), 355-369.
+
