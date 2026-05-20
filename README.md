@@ -88,34 +88,24 @@ This project maps physical parameters and initial conditions directly to the lat
 
 ```mermaid
 graph TD
-    classDef processStyle fill:#f9f9f9,stroke:#333,stroke-width:2px;
-    classDef dataStyle fill:#eceff1,stroke:#607d8b,stroke-width:2px,color:#263238;
-    classDef moduleStyle fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#4a148c;
+    ParamSampler["Random Parameter Sampler (D, r, mu, sigma)"]
+    CNSolver["Crank-Nicolson Solver (Thomas Algorithm)"]
+    HDF5Store["HDF5 Dataset Storage (initial state, params, numerical solution)"]
+    
+    DataLoader["PyTorch DataLoader (Batch size 32/64/128)"]
+    ChannelExp["Channel Expansion (input shape: B x 3 x 128)"]
+    
+    PyTorchTrain["PyTorch FNO 1D Training (Adam Optimizer, L2 Loss)"]
+    ONNXExport["ONNX Model Export"]
+    JSONWeights["React Engine Assembly (Weight Loading in JS)"]
 
-    subgraph DataGen["Data Generation Stage"]
-        ParamSampler["Random Parameter Sampler<br/>- D ∈ [0.01, 0.5]<br/>- r ∈ [0.1, 2.0]<br/>- μ ∈ [0.2, 0.8]<br/>- σ ∈ [0.05, 0.15]"]:::processStyle
-        CNSolver["Thomas-Algorithm Crank-Nicolson Solver<br/>- spatial grid (N=128)<br/>- temporal grid (Nt=1000)<br/>- Neumann BCs"]:::processStyle
-        HDF5Store["HDF5 Dataset Storage<br/>- 'x_init': Initial state u₀<br/>- 'params': [D, r]<br/>- 'y_final': Numerical Solution u(x, T)"]:::dataStyle
-    end
-
-    subgraph DataPrep["Data Preprocessing & Channel Encoding"]
-        DataLoader["PyTorch DataLoader<br/>- Batch size: 32 / 64 / 128"]:::processStyle
-        ChannelExp["Channel Expansion & Prepending<br/>- Shape transformation:<br/>Input: [u₀(x), D·1(x), r·1(x)]<br/>Grid size: (B, 3, 128)"]:::processStyle
-    end
-
-    subgraph InferencePipeline["Model & Deployment Execution Flow"]
-        PyTorchTrain["PyTorch FNO 1D Training<br/>- Adam Optimizer (lr=1e-3)<br/>- Relative L2 Loss function<br/>- 500 Epochs"]:::moduleStyle
-        ONNXExport["ONNX Model Export<br/>- Dynamic shape execution support"]:::processStyle
-        JSONWeights["React Engine Assembly<br/>- Direct weight loading in JS<br/>- Real-time tensor operations in Web UI"]:::processStyle
-    end
-
-    ParamSampler -->|Parameters| CNSolver
-    CNSolver -->|Ground Truth Trajectories| HDF5Store
-    HDF5Store -->|Batch Stream| DataLoader
-    DataLoader -->|Encode parameters as grid fields| ChannelExp
-    ChannelExp -->|Grid tensors| PyTorchTrain
-    PyTorchTrain -->|Checkpoints (.pt)| ONNXExport
-    ONNXExport -->|JS-optimized representations| JSONWeights
+    ParamSampler --> CNSolver
+    CNSolver --> HDF5Store
+    HDF5Store --> DataLoader
+    DataLoader --> ChannelExp
+    ChannelExp --> PyTorchTrain
+    PyTorchTrain --> ONNXExport
+    ONNXExport --> JSONWeights
 ```
 
 ### Fourier Neural Operator (FNO 1D) Architecture
@@ -123,7 +113,7 @@ graph TD
 The surrogate uses a 1D FNO to learn the mapping from initial conditions and physical parameters directly to the final concentration profile:
 
 ```
-Input: (u₀(x), D, r) → shape (B, 3, 128)
+Input: (u_0(x), D, r) → shape (B, 3, 128)
   ↓
 Lifting Layer: Linear(3 → 64)
   ↓
@@ -144,61 +134,43 @@ The detailed model routing flow showing spectral convolutions and local linear p
 
 ```mermaid
 graph TD
-    classDef inputStyle fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b;
-    classDef layerStyle fill:#ede7f6,stroke:#5e35b1,stroke-width:2px,color:#311b92;
-    classDef spectralStyle fill:#f1f8e9,stroke:#558b2f,stroke-width:2px,color:#1b5e20;
-    classDef projectionStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100;
-    classDef outputStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
-
-    IC["Initial Condition u₀(x) (B, 1, 128)"]:::inputStyle
-    Params["Physical Parameters (D, r) (B, 2, 128)"]:::inputStyle
-    Concat["Concatenation Layer (B, 3, 128)"]:::inputStyle
-    Lifting["Lifting Layer (Linear 3 → 64)"]:::layerStyle
+    IC["Initial Condition u_0(x) - Batch x 1 x 128"]
+    Params["Physical Parameters D, r - Batch x 2 x 128"]
+    Concat["Concatenation Layer - Batch x 3 x 128"]
+    Lifting["Lifting Layer - Linear 3 to 64"]
     
-    subgraph FNOBlock1["Fourier Layer 1"]
-        F1["Spectral Conv 1D (modes=32)"]:::spectralStyle
-        FF1["Fast Fourier Transform (FFT)"]
-        Filter1["Truncate Higher Frequencies & Multiply R(θ)"]
-        IFF1["Inverse FFT (IFFT)"]
-        W1["Local Linear Path W₁ (Residual Connection)"]:::layerStyle
-        Add1["Sum (Spectral Path + Linear Path)"]
+    subgraph FNO_Layer_1["Fourier Layer 1"]
+        F1["Spectral Conv 1D (modes=32)"]
+        W1["Local Linear Path W_1"]
+        Add1["Sum (Spectral + Linear Path)"]
         Act1["GELU Activation"]
     end
     
-    subgraph FNOBlock2["Fourier Layer 2"]
-        F2["Spectral Conv 1D (modes=32)"]:::spectralStyle
-        FF2["FFT"]
-        Filter2["Truncate Frequencies & Multiply R(θ)"]
-        IFF2["IFFT"]
-        W2["Local Linear Path W₂"]:::layerStyle
+    subgraph FNO_Layer_2["Fourier Layer 2"]
+        F2["Spectral Conv 1D (modes=32)"]
+        W2["Local Linear Path W_2"]
         Add2["Sum"]
         Act2["GELU Activation"]
     end
 
-    subgraph FNOBlock3["Fourier Layer 3"]
-        F3["Spectral Conv 1D (modes=32)"]:::spectralStyle
-        FF3["FFT"]
-        Filter3["Truncate Frequencies & Multiply R(θ)"]
-        IFF3["IFFT"]
-        W3["Local Linear Path W₃"]:::layerStyle
+    subgraph FNO_Layer_3["Fourier Layer 3"]
+        F3["Spectral Conv 1D (modes=32)"]
+        W3["Local Linear Path W_3"]
         Add3["Sum"]
         Act3["GELU Activation"]
     end
 
-    subgraph FNOBlock4["Fourier Layer 4"]
-        F4["Spectral Conv 1D (modes=32)"]:::spectralStyle
-        FF4["FFT"]
-        Filter4["Truncate Frequencies & Multiply R(θ)"]
-        IFF4["IFFT"]
-        W4["Local Linear Path W₄"]:::layerStyle
+    subgraph FNO_Layer_4["Fourier Layer 4"]
+        F4["Spectral Conv 1D (modes=32)"]
+        W4["Local Linear Path W_4"]
         Add4["Sum"]
         Act4["GELU Activation"]
     end
 
-    Proj1["Projection Layer 1 (Linear 64 → 128)"]:::projectionStyle
-    ActP["GELU Activation"]:::projectionStyle
-    Proj2["Projection Layer 2 (Linear 128 → 1)"]:::projectionStyle
-    Output["Predicted Concentration u(x, T=1.0) (B, 1, 128)"]:::outputStyle
+    Proj1["Projection Layer 1 - Linear 64 to 128"]
+    ActP["GELU Activation"]
+    Proj2["Projection Layer 2 - Linear 128 to 1"]
+    Output["Predicted Concentration u(x, T=1.0) - Batch x 1 x 128"]
 
     IC --> Concat
     Params --> Concat
@@ -206,25 +178,25 @@ graph TD
     Lifting --> F1
     Lifting --> W1
     
-    F1 --> FF1 --> Filter1 --> IFF1 --> Add1
+    F1 --> Add1
     W1 --> Add1
     Add1 --> Act1
     
     Act1 --> F2
     Act1 --> W2
-    F2 --> FF2 --> Filter2 --> IFF2 --> Add2
+    F2 --> Add2
     W2 --> Add2
     Add2 --> Act2
     
     Act2 --> F3
     Act2 --> W3
-    F3 --> FF3 --> Filter3 --> IFF3 --> Add3
+    F3 --> Add3
     W3 --> Add3
     Add3 --> Act3
 
     Act3 --> F4
     Act3 --> W4
-    F4 --> FF4 --> Filter4 --> IFF4 --> Add4
+    F4 --> Add4
     W4 --> Add4
     Add4 --> Act4
     
