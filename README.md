@@ -200,17 +200,31 @@ The workstation displays this number live in the portal header. Crank-Nicolson i
 
 ---
 
-### Error Metrics
+## Error Metrics
 
-**Pointwise Absolute Error:**
-$$e(x_i) = |u_{\text{solver}}(x_i) - u_{\text{fno}}(x_i)|$$
+### Pointwise Absolute Error
 
-**Relative L2 Error:**
-$$\mathcal{E}_{L_2} = \frac{\|\mathbf{u}_{\text{solver}} - \mathbf{u}_{\text{fno}}\|_2}{\|\mathbf{u}_{\text{solver}}\|_2} \times 100\%$$
+$$
+e(x_i)=\left|u_{\mathrm{solver}}(x_i)-u_{\mathrm{fno}}(x_i)\right|
+$$
 
-**Mean Absolute Error (vs experimental data):**
-$$\text{MAE} = \frac{1}{N}\sum_{i=1}^{N} |u_{\text{pred}}(x_i) - u_{\text{exp}}(x_i)|$$
+### Relative L2 Error
 
+$$
+\mathcal{E}_{L_2}=
+\frac{
+\left\|\mathbf{u}_{\mathrm{solver}}-\mathbf{u}_{\mathrm{fno}}\right\|_2
+}{
+\left\|\mathbf{u}_{\mathrm{solver}}\right\|_2
+}
+\times 100\%
+$$
+
+
+
+### Mean Absolute Error (MAE)
+
+$\text{MAE} = \frac{1}{N}\sum_{i=1}^{N}\left|u_{\text{pred}}(x_i)-u_{\text{exp}}(x_i)\right|$
 ---
 
 ## System Architecture
