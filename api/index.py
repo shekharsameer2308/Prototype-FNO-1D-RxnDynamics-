@@ -95,9 +95,9 @@ def simulate(req: SimulationRequest):
     front = mu + c_speed * req.T_end
     
     if req.modelType == "allen":
-        wave = 0.5 * (1 + np.tanh(xi * (x - front)))
+        wave = 0.5 * (1 - np.tanh(xi * (x - front)))
     else:
-        wave = 1.0 / (1.0 + np.exp(-xi * 6 * (x - front)))
+        wave = 1.0 / (1.0 + np.exp(xi * 6 * (x - front)))
         
     blend = min(1.0, req.T_end * 1.5)
     icVal = np.clip(np.exp(-0.5 * ((x - mu) / sig)**2), 0, 1)

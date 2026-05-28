@@ -50,11 +50,11 @@ $$u_0(x) = \exp\!\left(-\frac{(x - \mu)^2}{2\sigma^2}\right), \quad x \in [0, 1]
 
 **Fisher-KPP wave speed & predicted profile:**
 $$c = 2\sqrt{D \cdot r}, \quad \xi = \sqrt{\frac{r}{6D}}$$
-$$u_{\text{fno}}(x, t) = \frac{1}{1 + \exp\!\left(-6\xi\,(x - (\mu + c\,t))\right)}$$
+$$u_{\text{fno}}(x, t) = \frac{1}{1 + \exp\!\left(6\xi\,(x - (\mu + c\,t))\right)}$$
 
 **Allen-Cahn wave speed & predicted profile:**
 $$c_{\text{AC}} = 1.35\sqrt{D \cdot r}, \quad \xi_{\text{AC}} = \sqrt{\frac{r}{2D}}$$
-$$u_{\text{fno}}(x, t) = \frac{1}{2}\left(1 + \tanh\!\left(\xi_{\text{AC}}\,(x - (\mu + c_{\text{AC}}\,t))\right)\right)$$
+$$u_{\text{fno}}(x, t) = \frac{1}{2}\left(1 - \tanh\!\left(\xi_{\text{AC}}\,(x - (\mu + c_{\text{AC}}\,t))\right)\right)$$
 
 ### Crank-Nicolson Discretization
 

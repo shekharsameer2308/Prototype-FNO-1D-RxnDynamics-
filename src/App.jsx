@@ -83,8 +83,8 @@ function fnoPredictTime(D, r, mu, sig, t, modelType = "fisher", N = 128) {
     const x = i * dx;
     const icVal = Math.min(1, Math.max(0, Math.exp(-0.5 * ((x - mu_safe) / sig_safe) ** 2)));
     let wave = modelType === "allen"
-      ? 0.5 * (1 + Math.tanh(xi * (x - front)))
-      : 1 / (1 + Math.exp(-xi * 6 * (x - front)));
+      ? 0.5 * (1 - Math.tanh(xi * (x - front)))
+      : 1 / (1 + Math.exp(xi * 6 * (x - front)));
     const blend = t_safe === 0 ? 0 : Math.min(1, t_safe * 1.5);
     const pred = (1 - blend) * icVal + blend * Math.min(1, Math.max(0, wave));
     return Math.min(1, Math.max(0, isNaN(pred) || !isFinite(pred) ? icVal : pred));
@@ -817,7 +817,7 @@ function SimulatorPage({
     "    xi = np.sqrt(r / (6 * D))",
     "    x = np.linspace(0, 1, 128)",
     "    front = mu + c * t",
-    "    return 1 / (1 + np.exp(-xi * 6 * (x - front)))",
+    "    return 1 / (1 + np.exp(xi * 6 * (x - front)))",
   ];
 
   return (
