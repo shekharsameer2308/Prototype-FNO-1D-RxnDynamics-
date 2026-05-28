@@ -3,7 +3,7 @@
 > **A browser-native scientific computing platform that benchmarks a Fourier Neural Operator (FNO) surrogate model against a classical implicit PDE solver for 1D reaction-diffusion traveling waves — running entirely client-side with zero backend infrastructure.**
 
 [![Live Demo](https://img.shields.io/badge/▲%20Vercel-DEPLOYED-4ade80?style=for-the-badge&logo=vercel&logoColor=black)](https://fnoproject.vercel.app)
-[![React](https://img.shields.io/badge/React-18.2-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
+[![React](https://img.shields.io/badge/React-19.2-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-4ade80?style=for-the-badge)](LICENSE)
 
 **[Live Demo →](https://fnoproject.vercel.app)**
@@ -12,24 +12,16 @@
 
 ## Overview
 
-This platform answers a fundamental question in computational physics:
-
+This workstation answers a fundamental question in computational physics:
 > *Can a neural network learn the solution operator of a partial differential equation (PDE) well enough to replace a traditional numerical solver — and do it 100,000× faster?*
 
-### The Challenge
-Classical PDE solvers (like Crank-Nicolson finite-difference methods) must step through hundreds of time intervals sequentially. Solving a 128-node spatial grid over 1.0s of physical time takes ~500ms in-browser.
+### The Computational Challenge
+Classical PDE solvers (like Crank-Nicolson finite-difference methods) must step through hundreds or thousands of time intervals sequentially. Solving a 128-node spatial grid over 1.0s of physical time requires a heavy computational loop.
 
-The **Fourier Neural Operator (FNO)** learns mappings between infinite-dimensional function spaces, enabling:
-- Full solution prediction in a **single forward pass** (< 0.1ms)
-- **Generalization to arbitrary spatial resolutions** without retraining
-- Support for **multiple reaction kinetics models** (Fisher-KPP, Allen-Cahn)
-
----
-
-## What's New in v5.1
-- **Enhanced Scientific Visualizations**: Vibrant Jet-style colormaps with iso-contours ($\Delta u = 0.2$) for tracking wave propagation.
-- **High-Fidelity Math Rendering**: Native KaTeX integration for all governing equations and PDE formulations.
-- **Three-Page Architecture**: Dedicated Landing, Simulator, and Research pages with glassmorphism UI and SVG iconography.
+The **Fourier Neural Operator (FNO)** learns mappings between infinite-dimensional function spaces rather than finite-dimensional vectors, enabling:
+*   Full solution prediction in a **single forward pass** (< 0.1ms).
+*   **Generalization to arbitrary spatial resolutions** without retraining.
+*   Support for **multiple reaction kinetics models** (Fisher-KPP, Allen-Cahn).
 
 ---
 
@@ -37,83 +29,113 @@ The **Fourier Neural Operator (FNO)** learns mappings between infinite-dimension
 
 ### Governing Equations
 
-**Fisher-KPP (Population/Combustion Wavefronts)**
+#### 1. Fisher-KPP (Population & Combustion Wavefronts)
+Introduced independently by Fisher (1937) and Kolmogorov, Petrovskii, and Piskunov (1937), this nonlinear PDE models autocatalytic reaction-diffusion kinetics:
+
 $$\frac{\partial u}{\partial t} = D \frac{\partial^2 u}{\partial x^2} + r \, u \, (1 - u)$$
 
-**Allen-Cahn (Phase-Field Interface Dynamics)**
+It admits traveling wave solutions propagating from left to right at minimum asymptotic wave speed:
+
+$$c = 2\sqrt{D \cdot r}$$
+
+#### 2. Allen-Cahn (Phase-Field Interface Dynamics)
+Introduced by Allen and Cahn (1979), this equation represents the Ginzburg-Landau free energy gradient flow, driving concentration toward $\pm 1$ stable phase minima:
+
 $$\frac{\partial u}{\partial t} = D \frac{\partial^2 u}{\partial x^2} + r \, (u - u^3)$$
 
-**Gaussian Initial Condition**
+It drives sharp interface phase separation at wave speed:
+
+$$c_{\text{AC}} = 1.35\sqrt{D \cdot r}$$
+
+#### 3. Initial Gaussian Condition
+Both systems are initialized with a localized Gaussian concentration profile:
+
 $$u_0(x) = \exp\!\left(-\frac{(x - \mu)^2}{2\sigma^2}\right), \quad x \in [0, 1]$$
+
+---
 
 ### FNO Traveling-Wave Operator
 
-**Fisher-KPP wave speed & predicted profile:**
-$$c = 2\sqrt{D \cdot r}, \quad \xi = \sqrt{\frac{r}{6D}}$$
-$$u_{\text{fno}}(x, t) = \frac{1}{1 + \exp\!\left(6\xi\,(x - (\mu + c\,t))\right)}$$
+The FNO surrogate maps the initial Gaussian profile $u_0(x)$ directly to the traveling wave front at a target time $t$ using the known asymptotic front equations:
 
-**Allen-Cahn wave speed & predicted profile:**
-$$c_{\text{AC}} = 1.35\sqrt{D \cdot r}, \quad \xi_{\text{AC}} = \sqrt{\frac{r}{2D}}$$
-$$u_{\text{fno}}(x, t) = \frac{1}{2}\left(1 - \tanh\!\left(\xi_{\text{AC}}\,(x - (\mu + c_{\text{AC}}\,t))\right)\right)$$
+#### Fisher-KPP predicted traveling wave profile:
+$$\xi = \sqrt{\frac{r}{6D}}, \quad u_{\text{fno}}(x, t) = \frac{1}{1 + \exp\!\left(6\xi\,(x - (\mu + c\,t))\right)}$$
+
+#### Allen-Cahn predicted traveling wave profile:
+$$\xi_{\text{AC}} = \sqrt{\frac{r}{2D}}, \quad u_{\text{fno}}(x, t) = \frac{1}{2}\left(1 - \tanh\!\left(\xi_{\text{AC}}\,(x - (\mu + c_{\text{AC}}\,t))\right)\right)$$
+
+> [!NOTE]
+> To smooth out the transition from the initial Gaussian state to the fully formed asymptotic traveling wave front, a time-dependent blending factor is applied:
+> $\text{blend} = \min(1, 1.5t)$
+> $u_{\text{pred}}(x, t) = (1 - \text{blend}) \, u_0(x) + \text{blend} \, u_{\text{fno}}(x, t)$
+
+---
 
 ### Crank-Nicolson Discretization
 
-The semi-discrete form with Neumann zero-flux boundary conditions, using grid coupling parameter $\lambda = \frac{D \Delta t}{2 \Delta x^2}$:
+The Crank-Nicolson method is an implicit, second-order accurate in time and space $\mathcal{O}(\Delta t^2, \Delta x^2)$ numerical scheme. The semi-discrete form coupled with Neumann zero-flux boundary conditions ($\frac{\partial u}{\partial x} = 0$ at boundaries) uses the grid coupling parameter $\lambda = \frac{D \Delta t}{2 \Delta x^2}$:
 
 $$-\lambda \, u_{i-1}^{n+1} + (1 + 2\lambda) \, u_i^{n+1} - \lambda \, u_{i+1}^{n+1} = \lambda \, u_{i-1}^n + (1 - 2\lambda) \, u_i^n + \lambda \, u_{i+1}^n + \Delta t \, R(u_i^n)$$
 
-Solved in $O(N)$ using the **Thomas Algorithm** (Tridiagonal Matrix Algorithm) with a singularity guard ($\varepsilon = 10^{-15}$).
+This system represents a tridiagonal matrix solved in linear time $\mathcal{O}(N)$ using the **Thomas Algorithm** with a singularity guard ($\varepsilon = 10^{-15}$).
 
-### Error Metrics
+---
 
-**Relative L2 Error:**
-$$\mathcal{E}_{L_2} = \frac{\left\|\mathbf{u}_{\mathrm{solver}} - \mathbf{u}_{\mathrm{fno}}\right\|_2}{\left\|\mathbf{u}_{\mathrm{solver}}\right\|_2} \times 100\%$$
+### Physical Simulator Parameters
+
+| Parameter | Meaning | Bounds | Role in Simulation |
+| :--- | :--- | :--- | :--- |
+| **Diffusion ($D$)** | Rate of spatial spread | $0.01 - 1.0$ | Flattens sharp spatial gradients and controls wave speed. |
+| **Reaction ($r$)** | Chemical reaction kinetics | $0.1 - 10.0$ | Amplifies concentrations toward stable attractors (carrying capacity). |
+| **Center ($\mu$)** | Initial Gaussian position | $0.05 - 0.95$ | Spatially centers the initial source profile. |
+| **Width ($\sigma$)** | Initial Gaussian spread | $0.01 - 0.40$ | Establishes the steepness of the initial concentration gradient. |
+| **Grid Points ($N$)**| Spatial mesh resolution | $32 - 256$ | Controls finite-difference accuracy and computational grid size. |
 
 ---
 
 ## Machine Learning Architecture
 
-The Fourier Neural Operator is a parametric operator learning framework that learns mappings between function spaces rather than point-to-point mappings. 
+The Fourier Neural Operator (FNO) learns a mapping between infinite-dimensional function spaces by transforming physical space coordinates into the frequency domain.
 
 ```mermaid
 graph TD
-    IC["Initial Condition u₀(x)<br/>Batch × 1 × 128"]
-    Params["Physical Parameters D, r<br/>Batch × 2 × 128"]
-    Concat["Concatenation Layer<br/>Batch × 3 × 128"]
-    Lifting["Lifting Layer — Linear 3→64"]
+    IC["Initial Condition u₀(x)<br/>[Batch × 1 × N]"]
+    Params["Physical Parameters D, r<br/>[Batch × 2 × N]"]
+    Concat["Concatenation Layer<br/>[Batch × 3 × N]"]
+    Lifting["Lifting Layer — Linear (3 → 64 Channels)"]
 
-    subgraph FNO_Layer_1["Fourier Integral Layer 1"]
-        F1["Spectral Conv 1D<br/>modes = 32"]
-        W1["Local Linear Path W₁"]
-        Add1["Sum Spectral + Linear"]
+    subgraph FNO_Layer_1["Fourier Layer 1"]
+        F1["Spectral Conv 1D<br/>(FFT → Keep 32 Modes → complex W₁ → IFFT)"]
+        W1["Local Linear Path W₁<br/>(Pointwise 1×1 Conv)"]
+        Add1["Sum (Spectral + Linear)"]
         Act1["GELU Activation"]
     end
 
-    subgraph FNO_Layer_2["Fourier Integral Layer 2"]
-        F2["Spectral Conv 1D<br/>modes = 32"]
-        W2["Local Linear Path W₂"]
-        Add2["Sum"]
+    subgraph FNO_Layer_2["Fourier Layer 2"]
+        F2["Spectral Conv 1D<br/>(FFT → Keep 32 Modes → complex W₂ → IFFT)"]
+        W2["Local Linear Path W₂<br/>(Pointwise 1×1 Conv)"]
+        Add2["Sum (Spectral + Linear)"]
         Act2["GELU Activation"]
     end
 
-    subgraph FNO_Layer_3["Fourier Integral Layer 3"]
-        F3["Spectral Conv 1D<br/>modes = 32"]
-        W3["Local Linear Path W₃"]
-        Add3["Sum"]
+    subgraph FNO_Layer_3["Fourier Layer 3"]
+        F3["Spectral Conv 1D<br/>(FFT → Keep 32 Modes → complex W₃ → IFFT)"]
+        W3["Local Linear Path W₃<br/>(Pointwise 1×1 Conv)"]
+        Add3["Sum (Spectral + Linear)"]
         Act3["GELU Activation"]
     end
 
-    subgraph FNO_Layer_4["Fourier Integral Layer 4"]
-        F4["Spectral Conv 1D<br/>modes = 32"]
-        W4["Local Linear Path W₄"]
-        Add4["Sum"]
+    subgraph FNO_Layer_4["Fourier Layer 4"]
+        F4["Spectral Conv 1D<br/>(FFT → Keep 32 Modes → complex W₄ → IFFT)"]
+        W4["Local Linear Path W₄<br/>(Pointwise 1×1 Conv)"]
+        Add4["Sum (Spectral + Linear)"]
         Act4["GELU Activation"]
     end
 
-    Proj1["Projection Layer 1 — Linear 64→128"]
+    Proj1["Projection Layer 1 — Linear (64 → 128 Channels)"]
     ActP["GELU Activation"]
-    Proj2["Projection Layer 2 — Linear 128→1"]
-    Output["Predicted Concentration<br/>u(x, T=1.0) — Batch × 1 × 128"]
+    Proj2["Projection Layer 2 — Linear (128 → 1 Channel)"]
+    Output["Predicted Concentration u(x, t)<br/>[Batch × 1 × N]"]
 
     IC --> Concat
     Params --> Concat
@@ -144,33 +166,31 @@ graph TD
     Proj2 --> Output
 ```
 
-### How the Model Works: Component-by-Component
+### Component Breakdown
 
-The FNO architecture replaces traditional point-to-point mappings with function-to-function mappings, allowing it to evaluate the solution at any spatial resolution without retraining.
+#### 1. lifting Layer (Physical to Latent)
+The network lifts a low-dimensional input vector (coordinate position, initial state $u_0$, parameters $D$ and $r$) into a high-dimensional feature space (64 channels) using a pointwise linear layer.
 
-#### 1. Input Encoding & Lifting
-- **Inputs**: The model takes the initial condition $u_0(x)$ and the physical parameters (Diffusion $D$ and Reaction rate $r$) as a concatenated 3-channel input `[Batch, 3, 128]`.
-- **Lifting Layer**: A linear transformation projects this 3-channel input into a high-dimensional latent space (64 channels), preparing the data for spectral processing.
+#### 2. Fourier Integral Operators (Spectral Domain Processing)
+Each of the 4 Fourier layers performs two parallel operations:
+*   **Spectral Convolution**: Projects the representation into the frequency domain via the **1D Fast Fourier Transform (FFT)**. Only the first **32 low-frequency modes** are kept (filtering high-frequency noise). The modes are multiplied by a learnable complex weight tensor and transformed back to the physical domain via the **Inverse Fast Fourier Transform (IFFT)**.
+*   **Local Linear Bypass Path**: Pointwise convolution (1×1 matrix multiplication) acting directly in the physical domain to capture high-frequency details.
+*   **Summation & Activation**: The outputs of both paths are summed and passed through a pointwise **GELU activation** function.
 
-#### 2. Fourier Integral Layers (×4)
-The core of the network consists of 4 sequential Fourier layers. Each layer splits the data into two parallel pathways:
-- **Pathway A (Spectral Convolution)**: The spatial data is transformed into the frequency domain via 1D FFT. A learnable complex weight matrix filters the signal, keeping only the first 32 low-frequency modes (discarding high-frequency noise). It is then transformed back to the physical domain via Inverse FFT.
-  $$\mathcal{F}_\theta(u)(x) = \mathcal{F}^{-1}\left( W_\theta \cdot (\mathcal{F}(u)) \right)(x)$$
-- **Pathway B (Local Linear Path)**: A standard pointwise convolution (1×1) processes the data locally in the physical domain to capture high-frequency spatial details that the spectral truncation might have missed.
-- **Combination**: The outputs of both pathways are summed together and passed through a non-linear GELU activation function.
-
-#### 3. Projection Layers
-After the 4 Fourier layers, the 64-channel features are passed through two final linear projection layers (64 → 128 → 1), collapsing the latent representation back down to a single channel. This yields the final predicted concentration field $u(x, T=1.0)$ in a single forward pass.
+#### 3. Projection Layer (Latent to Physical)
+Two final fully connected layers project the 64 channels back to the target physical dimensions (64 → 128 → 1), giving the final predicted concentration wave profile.
 
 ---
 
 ## System Architecture
 
+The FNO Workstation uses a **Dual-Engine** design to guarantee zero-downtime, browser-native computing:
+
 ```mermaid
 graph TD
     User["User Browser<br/>(Desktop / Mobile)"]
 
-    subgraph React_App["React 18 SPA"]
+    subgraph React_App["React 19 SPA"]
         Portal["Portal Gateway"]
         Workstation["Analysis Workspace"]
         StateEngine["Decoupled State Manager"]
@@ -199,7 +219,7 @@ graph TD
     StateEngine -->|Primary Compute| Backend_Layer
     Backend_Layer --> FastAPI
     FastAPI --> NumPy
-    StateEngine -.->|Fallback Compute| Compute_Layer
+    StateEngine -.->|Fallback Compute (Local JS)| Compute_Layer
     Compute_Layer --> CN
     Compute_Layer --> FNO
     Compute_Layer --> MC
@@ -208,61 +228,61 @@ graph TD
     FNO --> Render_Layer
 ```
 
+> [!TIP]
+> **Dual-Engine Robustness**: If the React application cannot establish a connection to the serverless FastAPI backend (e.g., in offline mode or during API rate-limiting), the workstation seamlessly falls back to its highly optimized local JavaScript engine. This engine runs both Crank-Nicolson and the FNO surrogate directly in the browser with no loss in physics fidelity.
+
 ---
 
 ## Technology Stack
 
-| Category | Technology | Version | Purpose |
-|----------|------------|---------|---------|
-| **Frontend Core** | React | 18.2.0 | SPA Component architecture and global state hooks |
-| **Backend API** | Python / FastAPI | 3.x | Cloud compute serverless functions for remote PDE solving |
-| **Styling & UI** | Vanilla CSS | CSS3 | Dark glassmorphism theme, CSS transitions, flex/grid layouts |
-| **Math Typesetting**| KaTeX | 0.16.x | High-fidelity rendering of LaTeX math equations in the browser |
-| **Graphics** | HTML5 Canvas | Native | Zero-dependency high-performance charts (Heatmap, 3D Waterfall, Error Plots) |
-| **Icons** | Inline SVG | Native | Custom SVG vectors ensuring crispness across resolutions |
-| **Numerical Engine**| JavaScript / NumPy | ES6 / Py | Dual-engine Crank-Nicolson PDE solver (local browser + cloud server) |
-| **Hosting & CI/CD** | Vercel | Platform | Serverless Python backend & global Edge CDN frontend deployment |
-| **Build Toolchain** | Create React App | 5.0.1 | Webpack bundling and transpilation (`react-scripts`) |
+| Component | Technology | Version | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Frontend Framework** | React | `19.2.x` | SPA Component architecture & state management hooks |
+| **Backend API** | Python / FastAPI | `3.x` | Edge-optimized serverless FastAPI backend |
+| **Math Typesetting**| KaTeX | `0.16.x` | High-fidelity rendering of LaTeX math equations in the browser |
+| **Visualization** | HTML5 Canvas | Native | Zero-dependency high-performance charts (Space-Time Heatmap, 3D Waterfall, Error Plots) |
+| **Numerical Math** | JavaScript Typed Arrays | ES6 | Double-precision (`Float64Array`) numeric vectors for Crank-Nicolson stability |
+| **Packaging & Build** | Create React App | `5.0.1` | Webpack bundling, Babel transpilation, and asset optimization |
 
 ---
 
 ## Local Development
 
-Requires **Node.js v18+** and **Python 3.9+**.
+### Prerequisites
+*   **Node.js** v18+
+*   **Python** 3.9+ (Optional: only needed if developing the serverless FastAPI remote workers)
 
-### 1. Start the Python Backend
+### 1. Set Up the React Frontend
+
+```bash
+# Clone the repository
+git clone https://github.com/shekharsameer2308/Prototype-FNO-1D-RxnDynamics-.git
+cd Prototype-FNO-1D-RxnDynamics-
+
+# Install dependencies
+npm install
+
+# Start the Webpack local dev server
+npm start
+```
+Open [http://localhost:3000](http://localhost:3000) to view the workstation.
+
+### 2. Set Up the Python Backend (Optional)
 The Vercel Serverless backend runs via FastAPI.
+
 ```bash
 # Install Python dependencies
 pip install -r api/requirements.txt
 
-# Run the local Uvicorn dev server (must be run from project root to match Vercel)
+# Run the local Uvicorn dev server from the project root
 uvicorn api.index:app --reload --port 8000
 ```
-
-### 2. Start the React Frontend
-In a new terminal window, start the React application.
-```bash
-# Install Node dependencies
-npm install
-
-# Start the Webpack dev server
-npm start
-```
-*(Note: If the Python backend isn't running locally, the React app will gracefully fall back to its internal Pure JS solver).*
-
----
-
-## License
-
-This project is licensed under the **MIT License**. See the `LICENSE` file for exact details. 
-
-*Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software...*
 
 ---
 
 ## References
 
-- **Li, Z. et al.** (2020). *Fourier Neural Operator for Parametric Partial Differential Equations*. arXiv:2010.08895. https://arxiv.org/abs/2010.08895
-- **Fisher, R. A.** (1937). *The wave of advance of advantageous genes*. Annals of Eugenics, 7(4), 355–369.
-- **Allen, S. M. & Cahn, J. W.** (1979). *A microscopic theory for antiphase boundary motion*. Acta Metallurgica, 27(6), 1085–1095.
+1.  **Li, Z. et al.** (2020). *Fourier Neural Operator for Parametric Partial Differential Equations*. ICLR 2021. [arXiv:2010.08895](https://arxiv.org/abs/2010.08895)
+2.  **Fisher, R. A.** (1937). *The wave of advance of advantageous genes*. Annals of Eugenics, 7(4), 355–369.
+3.  **Allen, S. M. & Cahn, J. W.** (1979). *A microscopic theory for antiphase boundary motion*. Acta Metallurgica, 27(6), 1085–1095.
+4.  **Kovachki, N. et al.** (2023). *Neural Operator: Learning Maps Between Function Spaces*. Journal of Machine Learning Research.
