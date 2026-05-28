@@ -228,17 +228,28 @@ graph TD
 
 ## Local Development
 
-Requires Node.js v18+.
+Requires **Node.js v18+** and **Python 3.9+**.
 
+### 1. Start the Python Backend
+The Vercel Serverless backend runs via FastAPI.
 ```bash
-# Clone repository
-git clone https://github.com/shekharsameer2308/Prototype-FNO-1D-RxnDynamics-.git
-cd Prototype-FNO-1D-RxnDynamics-
+# Install Python dependencies
+pip install -r api/requirements.txt
 
-# Install dependencies & start server
+# Run the local Uvicorn dev server (must be run from project root to match Vercel)
+uvicorn api.index:app --reload --port 8000
+```
+
+### 2. Start the React Frontend
+In a new terminal window, start the React application.
+```bash
+# Install Node dependencies
 npm install
+
+# Start the Webpack dev server
 npm start
 ```
+*(Note: If the Python backend isn't running locally, the React app will gracefully fall back to its internal Pure JS solver).*
 
 ---
 
