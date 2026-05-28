@@ -176,9 +176,14 @@ graph TD
         StateEngine["Decoupled State Manager"]
     end
 
-    subgraph Compute_Layer["Client-Side Engine (Pure JS)"]
-        CN["Crank-Nicolson<br/>PDE Solver"]
-        FNO["FNO Surrogate"]
+    subgraph Backend_Layer["Vercel Serverless Backend"]
+        FastAPI["Python / FastAPI<br/>API Endpoint"]
+        NumPy["NumPy Crank-Nicolson &<br/>FNO Surrogate"]
+    end
+
+    subgraph Compute_Layer["Client-Side Fallback Engine (Pure JS)"]
+        CN["JS Crank-Nicolson"]
+        FNO["JS FNO Surrogate"]
         MC["Monte Carlo Sweep"]
     end
 
@@ -191,9 +196,14 @@ graph TD
     User --> React_App
     Portal --> StateEngine
     Workstation --> StateEngine
-    StateEngine --> CN
-    StateEngine --> FNO
-    StateEngine --> MC
+    StateEngine -->|Primary Compute| Backend_Layer
+    Backend_Layer --> FastAPI
+    FastAPI --> NumPy
+    StateEngine -.->|Fallback Compute| Compute_Layer
+    Compute_Layer --> CN
+    Compute_Layer --> FNO
+    Compute_Layer --> MC
+    NumPy --> Render_Layer
     CN --> Render_Layer
     FNO --> Render_Layer
 ```
