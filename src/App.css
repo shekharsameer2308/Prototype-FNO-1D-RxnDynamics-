@@ -5,25 +5,25 @@
 
 :root {
   /* === Core Palette === */
-  --bg:            #0f1210;
-  --bg-2:          #121a14;
-  --panel:         #182019;
-  --panel-glass:   rgba(18, 26, 20, 0.85);
-  --surface:       #1e2a1f;
-  --surface-2:     #243026;
-  --surface-hover: #283228;
+  --bg:            #0a0a0b;
+  --bg-2:          #121214;
+  --panel:         #1a1a1c;
+  --panel-glass:   rgba(26, 26, 28, 0.85);
+  --surface:       #222224;
+  --surface-2:     #2a2a2c;
+  --surface-hover: #323234;
 
   /* Borders */
-  --border:        #253228;
-  --border-light:  #344f38;
+  --border:        #2e2e32;
+  --border-light:  #3e3e42;
   --border-glow:   #4ade80;
 
   /* Text */
-  --text:          #eaf2eb;
-  --text-2:        #b0c8b4;
-  --text-3:        #7a9c7e;
-  --muted:         #5c7a60;
-  --muted-dim:     #2a3d2c;
+  --text:          #f0f0f2;
+  --text-2:        #b8b8be;
+  --text-3:        #82828a;
+  --muted:         #626268;
+  --muted-dim:     #323238;
 
   /* Accents */
   --accent:        #4ade80;
@@ -138,6 +138,20 @@ body {
   0%   { background-position: 0% 50%; }
   50%  { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
+}
+
+.chart-desc {
+  padding: 12px 16px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+  border-bottom-left-radius: var(--r-md);
+  border-bottom-right-radius: var(--r-md);
+}
+.chart-desc strong {
+  color: var(--text-2);
 }
 
 /* Waveform draw */

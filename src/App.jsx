@@ -1049,6 +1049,9 @@ function SimulatorPage({
                           <div className="plot-card-title warn">Pointwise Error |u_FNO − u_solver|</div>
                         </div>
                         <ErrorChart data={errField} title="Error field" />
+                        <div className="chart-desc">
+                          <strong>Pointwise Absolute Error:</strong> Measures the spatial deviation between the fast Fourier Neural Operator prediction and the classical Crank-Nicolson numerical solver at the current time-step. Highlights local high-frequency residual errors.
+                        </div>
                       </div>
                     </div>
 
@@ -1062,6 +1065,9 @@ function SimulatorPage({
                           </div>
                         </div>
                         <SolutionChart solver={solFinal} fno={fnoFinal} ic={icData} title="u(x,T=1)" />
+                        <div className="chart-desc">
+                          <strong>Final Concentration Profile u(x, T=1):</strong> Validates the surrogate model's capacity to accurately resolve macroscopic traveling wavefronts and steep phase boundaries over the entire integration period in a single forward pass.
+                        </div>
                       </div>
                       <div className="plot-card">
                         <div className="plot-card-header">
@@ -1075,8 +1081,8 @@ function SimulatorPage({
                           )}
                         </div>
                         <HeatmapChart snaps={snaps} onHover={setHudCoord} />
-                        <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--muted)" }}>
-                          Hover to read space-time values · rows=time, cols=space
+                        <div className="chart-desc">
+                          <strong>Space-Time Heatmap:</strong> Rows represent time advancing downwards; columns represent the spatial domain. Hover to dynamically probe localized traveling wave concentration states via the precision Crosshair HUD.
                         </div>
                       </div>
                     </div>
