@@ -200,17 +200,18 @@ graph TD
 
 ---
 
-## Exact Technical Stack
+## Technology Stack
 
 | Category | Technology | Version | Purpose |
 |----------|------------|---------|---------|
 | **Frontend Core** | React | 18.2.0 | SPA Component architecture and global state hooks |
+| **Backend API** | Python / FastAPI | 3.x | Cloud compute serverless functions for remote PDE solving |
 | **Styling & UI** | Vanilla CSS | CSS3 | Dark glassmorphism theme, CSS transitions, flex/grid layouts |
 | **Math Typesetting**| KaTeX | 0.16.x | High-fidelity rendering of LaTeX math equations in the browser |
 | **Graphics** | HTML5 Canvas | Native | Zero-dependency high-performance charts (Heatmap, 3D Waterfall, Error Plots) |
 | **Icons** | Inline SVG | Native | Custom SVG vectors ensuring crispness across resolutions |
-| **Numerical Engine**| Pure JavaScript | ES6+ | Client-side Crank-Nicolson PDE solving using `Float64Array` typed arrays |
-| **Hosting & CI/CD** | Vercel | Platform | Global Edge CDN deployment with continuous automated builds |
+| **Numerical Engine**| JavaScript / NumPy | ES6 / Py | Dual-engine Crank-Nicolson PDE solver (local browser + cloud server) |
+| **Hosting & CI/CD** | Vercel | Platform | Serverless Python backend & global Edge CDN frontend deployment |
 | **Build Toolchain** | Create React App | 5.0.1 | Webpack bundling and transpilation (`react-scripts`) |
 
 ---
