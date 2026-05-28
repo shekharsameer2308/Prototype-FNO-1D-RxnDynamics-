@@ -146,11 +146,12 @@ function drawLine(ctx, data, W, H, pad, color, lw = 2, glow = false) {
   ctx.shadowBlur = 0;
 }
 
-const greenColormap = (v) => {
+const vibrantColormap = (v) => {
   const t = Math.min(1, Math.max(0, v));
-  const r = Math.round(15 + t * 30);
-  const g = Math.round(18 + t * 200);
-  const b = Math.round(15 + t * 40);
+  // Jet colormap for scientific visualization
+  const r = Math.round(255 * Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 3))));
+  const g = Math.round(255 * Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 2))));
+  const b = Math.round(255 * Math.min(1, Math.max(0, 1.5 - Math.abs(4 * t - 1))));
   return `rgb(${r},${g},${b})`;
 };
 
@@ -221,8 +222,14 @@ function HeatmapChart({ snaps, onHover }) {
     const cw = W / nX; const ch = H / nT;
     for (let t = 0; t < nT; t++) {
       for (let x = 0; x < nX; x++) {
-        ctx.fillStyle = greenColormap(snaps[t][x]);
+        const val = snaps[t][x];
+        ctx.fillStyle = vibrantColormap(val);
         ctx.fillRect(x * cw, t * ch, cw + 0.5, ch + 0.5);
+        // Iso-band contours (every 0.2 interval)
+        if (Math.abs((val % 0.2) - 0.1) < 0.015) {
+          ctx.fillStyle = "rgba(255,255,255,0.3)";
+          ctx.fillRect(x * cw, t * ch, cw + 0.5, ch + 0.5);
+        }
       }
     }
   }, [snaps]);
@@ -730,10 +737,6 @@ function LandingPage({ setActivePage, mu, sig }) {
         <div className="footer-links">
           <span className="footer-link" onClick={() => setActivePage("simulator")}>Simulator</span>
           <span className="footer-link" onClick={() => setActivePage("research")}>Research</span>
-          <a className="footer-link" href="https://github.com/shekharsameer2308/Prototype-FNO-1D-RxnDynamics-"
-            target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <IcGitHub s={13} /> GitHub
-          </a>
         </div>
       </footer>
     </div>
@@ -1094,8 +1097,8 @@ function SimulatorPage({
                 ) : (
                   <>
                     <div style={{ marginBottom: 12, display: "flex", gap: 10, alignItems: "center" }}>
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted)" }}>
-                        Space-time heatmap (bright green = high u, dark = low u)
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted)", maxWidth: 500, lineHeight: 1.4 }}>
+                        <strong style={{ color: "var(--text)" }}>Space-Time Evolution:</strong> Time progresses vertically downwards while space spans horizontally. The vibrant scientific colormap and iso-contours (spaced by Δu=0.2) explicitly reveal the formation, steepness, and propagation velocity of phase boundaries and reaction fronts.
                       </div>
                       {hudCoord && (
                         <div className="hud-overlay">
@@ -1127,6 +1130,9 @@ function SimulatorPage({
                       <div className="plot-card-title">3D Waterfall — u(x,t)</div>
                     </div>
                     <Waterfall3DChart snaps={snaps} />
+                    <div style={{ padding: 12, fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)", borderTop: "1px solid var(--border)", marginTop: 8, lineHeight: 1.4 }}>
+                      <strong style={{ color: "var(--text)" }}>Volume Visualization:</strong> A pseudo-3D orthographic projection of the solution manifold. This perspective highlights the topological steepness of the traveling wave front (for Fisher-KPP) or the phase-separation boundary (for Allen-Cahn) over the entire integration period.
+                    </div>
                   </div>
                 )}
               </>
