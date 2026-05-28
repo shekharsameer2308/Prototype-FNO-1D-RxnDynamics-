@@ -10,17 +10,18 @@
 
 ---
 
-## ✨ v5.0 — Multi-Page Grey/Green Redesign (May 2026)
+## ✨ v5.1 — Enhanced Visuals & Scientific Fidelity (May 2026)
 
-This release introduces a complete frontend redesign with a **three-page multi-page architecture** and a refined **dark grey & green** design system, replacing the previous single-page cyberpunk/teal theme.
+This release introduces a complete frontend redesign with a **three-page multi-page architecture**, a refined **dark grey & green** design system, and high-fidelity scientific visualizations.
 
 ### What Changed
 
-#### 🎨 New Design System
+#### 🎨 New Design System & Visuals
 - **Color palette**: Deep charcoal backgrounds (`#0f1210`) with vibrant green accents (`#4ade80`, `#6ee7b7`)
-- **Typography**: [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk) for headings + JetBrains Mono for code/data
-- **Glassmorphism panels** with green-tinted borders and subtle glow effects
-- Green-spectrum canvas colormap (replaces inferno heatmap) for heatmap/waterfall charts
+- **Typography & Math**: Native **KaTeX** integration for high-fidelity rendering of all PDE and mathematical equations, replacing standard text. [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk) for headings + JetBrains Mono for code/data.
+- **Iconography**: Completely replaced standard emojis with a custom library of crisp, crisp inline SVG icons.
+- **Scientific Colormaps**: The space-time heatmap now uses a vibrant, high-contrast Jet-style colormap paired with overlaid **iso-contours** ($\Delta u = 0.2$), allowing for precise visual tracking of wave propagation and phase separation.
+- **Advanced Animations**: Smooth CSS-based entrance sequences and IntersectionObserver scroll-reveals for a dynamic, premium feel.
 
 #### 🗺️ New Three-Page Navigation
 | Page | Route | Description |
