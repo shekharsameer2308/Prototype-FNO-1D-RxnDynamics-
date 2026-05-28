@@ -73,7 +73,7 @@ body {
   color: var(--text);
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 /* Math / equation text */
@@ -209,8 +209,9 @@ body {
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
   position: relative;
+  overflow: hidden;
   background:
     radial-gradient(ellipse 1000px 500px at 15% -5%, rgba(74, 222, 128, 0.06), transparent 60%),
     radial-gradient(ellipse 700px 400px at 90% 95%, rgba(110, 231, 183, 0.04), transparent 55%),
