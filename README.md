@@ -2,13 +2,63 @@
 
 > **A browser-native scientific computing platform that benchmarks a Fourier Neural Operator (FNO) surrogate model against a classical implicit PDE solver for 1D reaction-diffusion traveling waves — running entirely client-side with zero backend infrastructure.**
 
-[![Live Demo](https://img.shields.io/badge/▲%20Vercel-DEPLOYED-00f5d4?style=for-the-badge&logo=vercel&logoColor=black)](https://fnoproject.vercel.app)
+[![Live Demo](https://img.shields.io/badge/▲%20Vercel-DEPLOYED-4ade80?style=for-the-badge&logo=vercel&logoColor=black)](https://fnoproject.vercel.app)
 [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
-[![License](https://img.shields.io/badge/License-MIT-8b5cf6?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-4ade80?style=for-the-badge)](LICENSE)
 
 **Live Demo →** [https://fnoproject.vercel.app](https://fnoproject.vercel.app)
 
 ---
+
+## ✨ v5.0 — Multi-Page Grey/Green Redesign (May 2026)
+
+This release introduces a complete frontend redesign with a **three-page multi-page architecture** and a refined **dark grey & green** design system, replacing the previous single-page cyberpunk/teal theme.
+
+### What Changed
+
+#### 🎨 New Design System
+- **Color palette**: Deep charcoal backgrounds (`#0f1210`) with vibrant green accents (`#4ade80`, `#6ee7b7`)
+- **Typography**: [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk) for headings + JetBrains Mono for code/data
+- **Glassmorphism panels** with green-tinted borders and subtle glow effects
+- Green-spectrum canvas colormap (replaces inferno heatmap) for heatmap/waterfall charts
+
+#### 🗺️ New Three-Page Navigation
+| Page | Route | Description |
+|------|--------|-------------|
+| **Landing** | `/` (Home) | Hero section, stats bar, feature grid, equation showcase, CTA |
+| **Simulator** | Simulator tab | Full parameter sidebar + 7-tab analysis workspace |
+| **Research** | Research tab | Theory cards, FNO pipeline diagram, references, tech stack |
+
+#### 🏠 Landing Page
+- Full-screen hero with animated grid background and gradient headline
+- Live IC preview canvas embedded in a browser-mockup preview card
+- Stats strip: 100–500× speedup · <0.1ms FNO latency · <2% L2 error · 2 PDE models
+- Feature cards for all 6 platform capabilities
+- Side-by-side Fisher-KPP / Allen-Cahn equation showcase
+- CTA section + footer with page navigation
+
+#### ⚡ Simulator Page (7 tabs)
+1. **Results** — metrics strip, animation timeline, 4-panel plot grid (solution, error, final profile, heatmap)
+2. **Heatmap** — full-width interactive space-time map with crosshair HUD
+3. **3D View** — pseudo-3D isometric waterfall plot
+4. **MC Sweep** — Monte Carlo 50-sample ensemble with histogram charts
+5. **Grid Conv.** — N=32/64/128/256 mesh convergence table
+6. **Upload Data** — CSV experimental data fitting
+7. **Python Code** — syntax-highlighted implementation reference
+
+#### 📚 Research Page
+- 4-card theory grid (Fisher-KPP, Allen-Cahn, Crank-Nicolson, FNO surrogate)
+- Step-by-step FNO pipeline: Lift → Fourier Layer → Activation → Project
+- 5 annotated academic references
+- Technology stack cards
+
+#### 🌐 Global Navbar
+- Sticky persistent navbar with live uptime counter
+- Active page indicator with green underline
+- "Launch Sim →" quick-access CTA button
+
+---
+
 
 ## What Is This Website?
 
