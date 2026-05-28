@@ -4,7 +4,7 @@
 
 [![Live Demo](https://img.shields.io/badge/▲%20Vercel-DEPLOYED-4ade80?style=for-the-badge&logo=vercel&logoColor=black)](https://fnoproject.vercel.app)
 [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
-[![License](https://img.shields.io/badge/License-MIT-4ade80?style=for-the-badge)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-4ade80?style=for-the-badge)](LICENSE)
 
 **[Live Demo →](https://fnoproject.vercel.app)**
 
@@ -71,16 +71,84 @@ $$\mathcal{E}_{L_2} = \frac{\left\|\mathbf{u}_{\mathrm{solver}} - \mathbf{u}_{\m
 
 ---
 
-## FNO vs Classical Solver: Comparison
+## Machine Learning Architecture
 
-| Aspect | Crank-Nicolson | FNO Surrogate |
-|--------|-----------------|---------------|
-| **Paradigm** | Time-stepping integration | Single forward pass |
-| **Time steps required** | 1,000 steps from t=0 to t=1 | 1 evaluation |
-| **Total complexity** | O(1000·N) = O(128,000) | O(128 log 128) = O(896) |
-| **Wall-clock time** | ~500ms | ~0.1ms |
-| **Speedup** | 1× (reference) | **> 100,000×** |
-| **Relative L2 Error** | < 0.01% | 0.399% |
+The Fourier Neural Operator is a parametric operator learning framework that learns mappings between function spaces rather than point-to-point mappings. 
+
+```mermaid
+graph TD
+    IC["Initial Condition u₀(x)<br/>Batch × 1 × 128"]
+    Params["Physical Parameters D, r<br/>Batch × 2 × 128"]
+    Concat["Concatenation Layer<br/>Batch × 3 × 128"]
+    Lifting["Lifting Layer — Linear 3→64"]
+
+    subgraph FNO_Layer_1["Fourier Integral Layer 1"]
+        F1["Spectral Conv 1D<br/>modes = 32"]
+        W1["Local Linear Path W₁"]
+        Add1["Sum Spectral + Linear"]
+        Act1["GELU Activation"]
+    end
+
+    subgraph FNO_Layer_2["Fourier Integral Layer 2"]
+        F2["Spectral Conv 1D<br/>modes = 32"]
+        W2["Local Linear Path W₂"]
+        Add2["Sum"]
+        Act2["GELU Activation"]
+    end
+
+    subgraph FNO_Layer_3["Fourier Integral Layer 3"]
+        F3["Spectral Conv 1D<br/>modes = 32"]
+        W3["Local Linear Path W₃"]
+        Add3["Sum"]
+        Act3["GELU Activation"]
+    end
+
+    subgraph FNO_Layer_4["Fourier Integral Layer 4"]
+        F4["Spectral Conv 1D<br/>modes = 32"]
+        W4["Local Linear Path W₄"]
+        Add4["Sum"]
+        Act4["GELU Activation"]
+    end
+
+    Proj1["Projection Layer 1 — Linear 64→128"]
+    ActP["GELU Activation"]
+    Proj2["Projection Layer 2 — Linear 128→1"]
+    Output["Predicted Concentration<br/>u(x, T=1.0) — Batch × 1 × 128"]
+
+    IC --> Concat
+    Params --> Concat
+    Concat --> Lifting
+    Lifting --> F1
+    Lifting --> W1
+    F1 --> Add1
+    W1 --> Add1
+    Add1 --> Act1
+    Act1 --> F2
+    Act1 --> W2
+    F2 --> Add2
+    W2 --> Add2
+    Add2 --> Act2
+    Act2 --> F3
+    Act2 --> W3
+    F3 --> Add3
+    W3 --> Add3
+    Add3 --> Act3
+    Act3 --> F4
+    Act3 --> W4
+    F4 --> Add4
+    W4 --> Add4
+    Add4 --> Act4
+    Act4 --> Proj1
+    Proj1 --> ActP
+    ActP --> Proj2
+    Proj2 --> Output
+```
+
+### Spectral Convolution
+The core insight of the FNO is the spectral convolution, which operates in the Fourier domain:
+$$\mathcal{F}_\theta(u)(x) = \mathcal{F}^{-1}\left( W_\theta \cdot (\mathcal{F}(u)) \right)(x)$$
+
+This allows the network to learn global, resolution-independent features by focusing on the most important low-frequency wave modes.
 
 ---
 
@@ -120,15 +188,18 @@ graph TD
 
 ---
 
-## Technical Stack
+## Exact Technical Stack
 
-| Component | Technology | Role |
-|-----------|-----------|------|
-| **Frontend** | React 18.2 | Component architecture and global state |
-| **Styling** | Vanilla CSS | Dark glassmorphism theme, animations |
-| **Graphics** | HTML5 Canvas | Zero-dependency high-performance charts |
-| **Numerical**| Pure JS / `Float64Array` | Client-side PDE solving and FNO evaluation |
-| **Hosting** | Vercel | Global Edge CDN deployment |
+| Category | Technology | Version | Purpose |
+|----------|------------|---------|---------|
+| **Frontend Core** | React | 18.2.0 | SPA Component architecture and global state hooks |
+| **Styling & UI** | Vanilla CSS | CSS3 | Dark glassmorphism theme, CSS transitions, flex/grid layouts |
+| **Math Typesetting**| KaTeX | 0.16.x | High-fidelity rendering of LaTeX math equations in the browser |
+| **Graphics** | HTML5 Canvas | Native | Zero-dependency high-performance charts (Heatmap, 3D Waterfall, Error Plots) |
+| **Icons** | Inline SVG | Native | Custom SVG vectors ensuring crispness across resolutions |
+| **Numerical Engine**| Pure JavaScript | ES6+ | Client-side Crank-Nicolson PDE solving using `Float64Array` typed arrays |
+| **Hosting & CI/CD** | Vercel | Platform | Global Edge CDN deployment with continuous automated builds |
+| **Build Toolchain** | Create React App | 5.0.1 | Webpack bundling and transpilation (`react-scripts`) |
 
 ---
 
@@ -148,8 +219,16 @@ npm start
 
 ---
 
+## License
+
+This project is licensed under the **MIT License**. See the `LICENSE` file for exact details. 
+
+*Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software...*
+
+---
+
 ## References
 
 - **Li, Z. et al.** (2020). *Fourier Neural Operator for Parametric Partial Differential Equations*. arXiv:2010.08895. https://arxiv.org/abs/2010.08895
 - **Fisher, R. A.** (1937). *The wave of advance of advantageous genes*. Annals of Eugenics, 7(4), 355–369.
-- **Allen, S. M. & Cahn, J. W.** (1979). *A microscopic theory for antiphase boundary motion and its application to antiphase domain coarsening*. Acta Metallurgica, 27(6), 1085–1095.
+- **Allen, S. M. & Cahn, J. W.** (1979). *A microscopic theory for antiphase boundary motion*. Acta Metallurgica, 27(6), 1085–1095.
