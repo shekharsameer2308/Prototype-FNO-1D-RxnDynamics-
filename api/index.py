@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import numpy as np
-
+import numexpr as ne
 app = FastAPI()
 
 class SimulationRequest(BaseModel):
@@ -10,6 +10,7 @@ class SimulationRequest(BaseModel):
     mu: float
     sigma: float
     modelType: str
+    custom_eq: str = ""
     N: int = 128
     dt: float = 5e-5
     T_end: float = 1.0
@@ -69,6 +70,11 @@ def simulate(req: SimulationRequest):
         
         if req.modelType == "allen":
             rxn = r * (u - u**3)
+        elif req.modelType == "custom" and req.custom_eq:
+            try:
+                rxn = r * ne.evaluate(req.custom_eq, local_dict={"u": u})
+            except Exception:
+                rxn = np.zeros_like(u)
         else:
             rxn = r * u * (1 - u)
             
@@ -85,25 +91,28 @@ def simulate(req: SimulationRequest):
         snaps.append(u.tolist())
         
     # FNO Evaluation
-    if req.modelType == "allen":
-        c_speed = 1.35 * np.sqrt(D * r)
-        xi = np.sqrt(r / (2 * D))
+    if req.modelType == "custom":
+        fno_pred = [] # Empty list indicates FNO is disabled for custom
     else:
-        c_speed = 2 * np.sqrt(D * r)
-        xi = np.sqrt(r / (6 * D))
+        if req.modelType == "allen":
+            c_speed = 1.35 * np.sqrt(D * r)
+            xi = np.sqrt(r / (2 * D))
+        else:
+            c_speed = 2 * np.sqrt(D * r)
+            xi = np.sqrt(r / (6 * D))
+            
+        front = mu + c_speed * req.T_end
         
-    front = mu + c_speed * req.T_end
-    
-    if req.modelType == "allen":
-        wave = 0.5 * (1 - np.tanh(xi * (x - front)))
-    else:
-        wave = 1.0 / (1.0 + np.exp(xi * 6 * (x - front)))
+        if req.modelType == "allen":
+            wave = 0.5 * (1 - np.tanh(xi * (x - front)))
+        else:
+            wave = 1.0 / (1.0 + np.exp(xi * 6 * (x - front)))
+            
+        blend = min(1.0, req.T_end * 1.5)
+        icVal = np.clip(np.exp(-0.5 * ((x - mu) / sig)**2), 0, 1)
         
-    blend = min(1.0, req.T_end * 1.5)
-    icVal = np.clip(np.exp(-0.5 * ((x - mu) / sig)**2), 0, 1)
-    
-    fno_pred = (1 - blend) * icVal + blend * np.clip(wave, 0, 1)
-    fno_pred = np.clip(np.nan_to_num(fno_pred, nan=icVal), 0, 1).tolist()
+        fno_pred = (1 - blend) * icVal + blend * np.clip(wave, 0, 1)
+        fno_pred = np.clip(np.nan_to_num(fno_pred, nan=icVal), 0, 1).tolist()
     
     return {
         "solver": {

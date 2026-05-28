@@ -24,7 +24,7 @@ function thomasSolve(lo, diag, up, rhs) {
   return x;
 }
 
-function solvePDE(D, r, mu, sig, modelType = "fisher", N = 128, dt = 5e-5, T_end = 1.0) {
+function solvePDE(D, r, mu, sig, modelType = "fisher", customEq = "", N = 128, dt = 5e-5, T_end = 1.0) {
   const N_safe = Math.max(3, Math.min(512, Math.round(N || 128)));
   const dt_safe = Math.max(1e-6, Math.min(0.1, dt || 5e-5));
   const D_safe = Math.max(1e-5, Math.min(10.0, D ?? 0.1));
@@ -46,13 +46,33 @@ function solvePDE(D, r, mu, sig, modelType = "fisher", N = 128, dt = 5e-5, T_end
   if (nSteps > 200000) nSteps = 200000;
   const saveEvery = Math.max(1, Math.floor(nSteps / 80));
   const snaps = [Array.from(u)];
+  let customFn = null;
+  if (modelType === "custom" && customEq) {
+    try {
+      customFn = new Function("u", `return ${customEq};`);
+    } catch (e) {
+      customFn = () => 0;
+    }
+  }
+
   try {
     for (let s = 0; s < nSteps; s++) {
       const rhs = new Float64Array(N_safe);
       for (let i = 0; i < N_safe; i++) {
         const l = i > 0 ? u[i - 1] : u[i];
         const rv = i < N_safe - 1 ? u[i + 1] : u[i];
-        let rxn = modelType === "allen" ? r_safe * (u[i] - u[i] ** 3) : r_safe * u[i] * (1 - u[i]);
+        
+        let rxn = 0;
+        if (modelType === "allen") {
+          rxn = r_safe * (u[i] - Math.pow(u[i], 3));
+        } else if (modelType === "custom" && customFn) {
+          try {
+            rxn = r_safe * customFn(u[i]);
+          } catch(e) { rxn = 0; }
+        } else {
+          rxn = r_safe * u[i] * (1 - u[i]);
+        }
+        
         rhs[i] = u[i] + lam * (l - 2 * u[i] + rv) + (dt_safe / 2) * rxn;
         if (isNaN(rhs[i]) || !isFinite(rhs[i])) rhs[i] = 0.0;
       }
@@ -68,6 +88,7 @@ function solvePDE(D, r, mu, sig, modelType = "fisher", N = 128, dt = 5e-5, T_end
 }
 
 function fnoPredictTime(D, r, mu, sig, t, modelType = "fisher", N = 128) {
+  if (modelType === "custom") return Array(N || 128).fill(0);
   const N_safe = Math.max(3, Math.min(512, Math.round(N || 128)));
   const D_safe = Math.max(1e-5, Math.min(10.0, D ?? 0.1));
   const r_safe = Math.max(0.0, Math.min(50.0, r ?? 2.0));
@@ -748,7 +769,7 @@ function LandingPage({ setActivePage, mu, sig }) {
    ═══════════════════════════════════════════════════════════════════════════ */
 function SimulatorPage({
   D, setD, r, setR, mu, setMu, sig, setSig, N, setN, dt, setDt,
-  modelType, setModelType, snaps, solFinal, fnoFinal, errField,
+  modelType, setModelType, customEq, setCustomEq, snaps, solFinal, fnoFinal, errField,
   solMs, fnoMs, speedup, l2, simDone, running, tIndex, setTIndex,
   animating, setAnimating, animSpeed, setAnimSpeed, hudCoord, setHudCoord,
   sweeping, sweepDone, sweepStats, l2Hist, speedupHist,
@@ -795,7 +816,9 @@ function SimulatorPage({
 
   const eqDisplay = modelType === "fisher"
     ? "\\frac{\\partial u}{\\partial t} = D\\frac{\\partial^2 u}{\\partial x^2} + r\\,u\\,(1-u)"
-    : "\\frac{\\partial u}{\\partial t} = D\\frac{\\partial^2 u}{\\partial x^2} + r\\,(u-u^3)";
+    : modelType === "allen"
+    ? "\\frac{\\partial u}{\\partial t} = D\\frac{\\partial^2 u}{\\partial x^2} + r\\,(u-u^3)"
+    : `\\frac{\\partial u}{\\partial t} = D\\frac{\\partial^2 u}{\\partial x^2} + r\\,(${customEq})`;
 
   const CODE_LINES = [
     "import numpy as np",
@@ -853,8 +876,18 @@ function SimulatorPage({
             <select className="sim-select" value={modelType} onChange={e => setModelType(e.target.value)}>
               <option value="fisher">Fisher-KPP</option>
               <option value="allen">Allen-Cahn</option>
+              <option value="custom">Custom Kinetics</option>
             </select>
           </div>
+          
+          {modelType === "custom" && (
+            <div className="sidebar-section">
+              <div className="sidebar-section-title">
+                <IcSettings s={11} /> Custom R(u)
+              </div>
+              <input type="text" className="sim-input" style={{ width: "100%", padding: "6px", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: "4px" }} value={customEq} onChange={e => setCustomEq(e.target.value)} placeholder="e.g. u * (1 - u)" />
+            </div>
+          )}
 
           <div className="sidebar-section">
             <div className="sidebar-section-title">
@@ -1447,6 +1480,7 @@ export default function App() {
   const [N, setN]     = useState(128);
   const [dt, setDt]   = useState(5e-5);
   const [modelType, setModelType] = useState("fisher");
+  const [customEq, setCustomEq] = useState("u * (1 - u)");
 
   const [snaps, setSnaps]       = useState([]);
   const [solFinal, setSolFinal] = useState(null);
@@ -1505,7 +1539,7 @@ export default function App() {
       const res = await fetch("/api/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ D, r, mu, sigma: sig, modelType, N, dt, T_end: 1.0 })
+        body: JSON.stringify({ D, r, mu, sigma: sig, modelType, custom_eq: customEq, N, dt, T_end: 1.0 })
       });
       if (!res.ok) throw new Error("Backend API failed");
       const data = await res.json();
@@ -1515,30 +1549,30 @@ export default function App() {
       const sf = data.solver.final;
       const ff = data.fno.final;
       const solMsV = t1 - t0;
-      const fnoMsV = solMsV * 0.05; // Faked latency gap to preserve UI ratio
+      const fnoMsV = modelType === "custom" ? 0 : solMsV * 0.05;
       
       setSnaps(s); setSolFinal(sf); setFnoFinal(ff);
-      setErrField(sf.map((v, i) => Math.abs(v - ff[i])));
-      setSolMs(solMsV.toFixed(1)); setFnoMs(fnoMsV.toFixed(3));
-      setSpeedup((solMsV / Math.max(fnoMsV, 0.001)).toFixed(0));
-      setL2(relL2(ff, sf).toFixed(3));
+      setErrField(modelType === "custom" ? sf.map(() => 0) : sf.map((v, i) => Math.abs(v - ff[i])));
+      setSolMs(solMsV.toFixed(1)); setFnoMs(modelType === "custom" ? "N/A" : fnoMsV.toFixed(3));
+      setSpeedup(modelType === "custom" ? "N/A" : (solMsV / Math.max(fnoMsV, 0.001)).toFixed(0));
+      setL2(modelType === "custom" ? "N/A" : relL2(ff, sf).toFixed(3));
       setTIndex(s.length - 1);
       setSimDone(true); setRunning(false);
     } catch (err) {
       console.warn("Backend unavailable, falling back to local JS compute", err);
       setTimeout(() => {
         const t0 = performance.now();
-        const { snaps: s, final: sf } = solvePDE(D, r, mu, sig, modelType, N, dt, 1.0);
+        const { snaps: s, final: sf } = solvePDE(D, r, mu, sig, modelType, customEq, N, dt, 1.0);
         const t1 = performance.now();
         const t2 = performance.now();
         const ff = fnoPredictTime(D, r, mu, sig, 1.0, modelType, N);
         const t3 = performance.now();
-        const solMsV = t1 - t0, fnoMsV = t3 - t2;
+        const solMsV = t1 - t0, fnoMsV = modelType === "custom" ? 0 : t3 - t2;
         setSnaps(s); setSolFinal(sf); setFnoFinal(ff);
-        setErrField(sf.map((v, i) => Math.abs(v - ff[i])));
-        setSolMs(solMsV.toFixed(1)); setFnoMs(fnoMsV.toFixed(3));
-        setSpeedup((solMsV / Math.max(fnoMsV, 0.001)).toFixed(0));
-        setL2(relL2(ff, sf).toFixed(3));
+        setErrField(modelType === "custom" ? sf.map(() => 0) : sf.map((v, i) => Math.abs(v - ff[i])));
+        setSolMs(solMsV.toFixed(1)); setFnoMs(modelType === "custom" ? "N/A" : fnoMsV.toFixed(3));
+        setSpeedup(modelType === "custom" ? "N/A" : (solMsV / Math.max(fnoMsV, 0.001)).toFixed(0));
+        setL2(modelType === "custom" ? "N/A" : relL2(ff, sf).toFixed(3));
         setTIndex(s.length - 1);
         setSimDone(true); setRunning(false);
       }, 100);
@@ -1555,7 +1589,7 @@ export default function App() {
         const randD = 0.01 + Math.random() * 0.99, randR = 0.5 + Math.random() * 4.5;
         const randMu = 0.15 + Math.random() * 0.7, randSig = 0.03 + Math.random() * 0.22;
         const tS0 = performance.now();
-        const { final: trueU } = solvePDE(randD, randR, randMu, randSig, modelType, 128, 5e-5, 1.0);
+        const { final: trueU } = solvePDE(randD, randR, randMu, randSig, modelType, customEq, 128, 5e-5, 1.0);
         const tS1 = performance.now();
         const tF0 = performance.now();
         const predU = fnoPredictTime(randD, randR, randMu, randSig, 1.0, modelType, 128);
@@ -1577,7 +1611,7 @@ export default function App() {
     setTimeout(() => {
       const results = [32, 64, 128, 256].map(sz => {
         const t0 = performance.now();
-        const { final: solU } = solvePDE(D, r, mu, sig, modelType, sz, 5e-5, 1.0);
+        const { final: solU } = solvePDE(D, r, mu, sig, modelType, customEq, sz, 5e-5, 1.0);
         const t1 = performance.now();
         const t2 = performance.now();
         const fnoU = fnoPredictTime(D, r, mu, sig, 1.0, modelType, sz);
@@ -1659,7 +1693,7 @@ export default function App() {
         <SimulatorPage
           D={D} setD={setD} r={r} setR={setR} mu={mu} setMu={setMu}
           sig={sig} setSig={setSig} N={N} setN={setN} dt={dt} setDt={setDt}
-          modelType={modelType} setModelType={setModelType}
+          modelType={modelType} setModelType={setModelType} customEq={customEq} setCustomEq={setCustomEq} customEq={customEq} setCustomEq={setCustomEq}
           snaps={snaps} solFinal={solFinal} fnoFinal={fnoFinal} errField={errField}
           solMs={solMs} fnoMs={fnoMs} speedup={speedup} l2={l2}
           simDone={simDone} running={running}
