@@ -144,11 +144,23 @@ graph TD
     Proj2 --> Output
 ```
 
-### Spectral Convolution
-The core insight of the FNO is the spectral convolution, which operates in the Fourier domain:
-$$\mathcal{F}_\theta(u)(x) = \mathcal{F}^{-1}\left( W_\theta \cdot (\mathcal{F}(u)) \right)(x)$$
+### How the Model Works: Component-by-Component
 
-This allows the network to learn global, resolution-independent features by focusing on the most important low-frequency wave modes.
+The FNO architecture replaces traditional point-to-point mappings with function-to-function mappings, allowing it to evaluate the solution at any spatial resolution without retraining.
+
+#### 1. Input Encoding & Lifting
+- **Inputs**: The model takes the initial condition $u_0(x)$ and the physical parameters (Diffusion $D$ and Reaction rate $r$) as a concatenated 3-channel input `[Batch, 3, 128]`.
+- **Lifting Layer**: A linear transformation projects this 3-channel input into a high-dimensional latent space (64 channels), preparing the data for spectral processing.
+
+#### 2. Fourier Integral Layers (×4)
+The core of the network consists of 4 sequential Fourier layers. Each layer splits the data into two parallel pathways:
+- **Pathway A (Spectral Convolution)**: The spatial data is transformed into the frequency domain via 1D FFT. A learnable complex weight matrix filters the signal, keeping only the first 32 low-frequency modes (discarding high-frequency noise). It is then transformed back to the physical domain via Inverse FFT.
+  $$\mathcal{F}_\theta(u)(x) = \mathcal{F}^{-1}\left( W_\theta \cdot (\mathcal{F}(u)) \right)(x)$$
+- **Pathway B (Local Linear Path)**: A standard pointwise convolution (1×1) processes the data locally in the physical domain to capture high-frequency spatial details that the spectral truncation might have missed.
+- **Combination**: The outputs of both pathways are summed together and passed through a non-linear GELU activation function.
+
+#### 3. Projection Layers
+After the 4 Fourier layers, the 64-channel features are passed through two final linear projection layers (64 → 128 → 1), collapsing the latent representation back down to a single channel. This yields the final predicted concentration field $u(x, T=1.0)$ in a single forward pass.
 
 ---
 
