@@ -233,7 +233,7 @@ graph TD
     StateEngine -->|Primary Compute| Backend_Layer
     Backend_Layer --> FastAPI
     FastAPI --> NumPy
-    StateEngine -.->|Fallback Compute (Local JS)| Compute_Layer
+    StateEngine -. "Fallback Compute (Local JS)" .-> Compute_Layer
     Compute_Layer --> CN
     Compute_Layer --> FNO
     Compute_Layer --> MC
