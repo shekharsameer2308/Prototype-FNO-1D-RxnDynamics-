@@ -75,7 +75,7 @@ $$\xi_{\text{AC}} = \sqrt{\frac{r}{2D}}, \quad u_{\text{fno}}(x, t) = \frac{1}{2
 
 The Crank-Nicolson method is an implicit, second-order accurate in time and space $\mathcal{O}(\Delta t^2, \Delta x^2)$ numerical scheme. The semi-discrete form coupled with Neumann zero-flux boundary conditions ($\frac{\partial u}{\partial x} = 0$ at boundaries) uses the grid coupling parameter $\lambda = \frac{D \Delta t}{2 \Delta x^2}$:
 
-$$-\lambda \, u_{i-1}^{n+1} + (1 + 2\lambda) \, u_i^{n+1} - \lambda \, u_{i+1}^{n+1} = \lambda \, u_{i-1}^n + (1 - 2\lambda) \, u_i^n + \lambda \, u_{i+1}^n + \Delta t \, R(u_i^n)$$
+$$-\lambda \, u_{i-1}^{n+1} + (1 + 2\lambda) \, u_i^{n+1} - \lambda \, u_{i+1}^{n+1} = \lambda \, u_{i-1}^n + (1 - 2\lambda) \, u_i^n + \lambda \, u_{i+1}^n + \frac{\Delta t}{2} \, R(u_i^n)$$
 
 This system represents a tridiagonal matrix solved in linear time $\mathcal{O}(N)$ using the **Thomas Algorithm** with a singularity guard ($\varepsilon = 10^{-15}$).
 
@@ -182,7 +182,7 @@ graph TD
 
 ### Component Breakdown
 
-#### 1. lifting Layer (Physical to Latent)
+#### 1. Lifting Layer (Physical to Latent)
 The network lifts a low-dimensional input vector (coordinate position, initial state $u_0$, parameters $D$ and $r$) into a high-dimensional feature space (64 channels) using a pointwise linear layer.
 
 #### 2. Fourier Integral Operators (Spectral Domain Processing)
@@ -227,19 +227,26 @@ graph TD
         Surface3D["3D Waterfall Surface"]
     end
 
-    User --> React_App
+    User --> Portal
+    User --> Workstation
     Portal --> StateEngine
     Workstation --> StateEngine
-    StateEngine -->|Primary Compute| Backend_Layer
-    Backend_Layer --> FastAPI
+
+    StateEngine -->|Primary Compute| FastAPI
     FastAPI --> NumPy
-    StateEngine -. "Fallback Compute (Local JS)" .-> Compute_Layer
-    Compute_Layer --> CN
-    Compute_Layer --> FNO
-    Compute_Layer --> MC
-    NumPy --> Render_Layer
-    CN --> Render_Layer
-    FNO --> Render_Layer
+    NumPy -->|Return Results| StateEngine
+
+    StateEngine -. "Fallback Compute (Local JS)" .-> CN
+    StateEngine -. "Fallback Compute (Local JS)" .-> FNO
+    StateEngine -. "Fallback Compute (Local JS)" .-> MC
+
+    CN -->|Update State| StateEngine
+    FNO -->|Update State| StateEngine
+    MC -->|Update State| StateEngine
+
+    StateEngine --> WavePlot
+    StateEngine --> Heatmap
+    StateEngine --> Surface3D
 ```
 
 > [!TIP]
