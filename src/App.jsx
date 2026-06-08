@@ -1,4 +1,3 @@
-/* eslint-disable */
 import { useState, useEffect, useRef, useCallback } from "react";
 import "./App.css";
 
@@ -139,8 +138,8 @@ function useCanvas(draw, deps) {
   return ref;
 }
 
-function drawAxes(ctx, W, H, pad) {
-  ctx.strokeStyle = "rgba(74, 222, 128, 0.08)";
+function drawAxes(ctx, W, H, pad, color = "rgba(74, 222, 128, 0.08)") {
+  ctx.strokeStyle = color;
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = pad.t + (H - pad.t - pad.b) / 4 * i;
@@ -185,41 +184,82 @@ function project3D(x, t, u, W, H, pad) {
   return { x: px, y: py };
 }
 
+const getThemeColors = (themeName = "emerald") => {
+  const t = themeName || "emerald";
+  if (t === "teal") {
+    return {
+      bg: "#0b1315", panel: "#121d20", border: "#1c2e33",
+      text: "#e0f2fe", muted: "#5a8a96",
+      accent: "#06b6d4", secondary: "#22d3ee",
+      accentRgb: "6, 182, 212", secondaryRgb: "34, 211, 238",
+      warn: "#fbbf24", bad: "#f87171"
+    };
+  }
+  if (t === "violet") {
+    return {
+      bg: "#0d0b16", panel: "#19142c", border: "#292044",
+      text: "#f5f3ff", muted: "#8b7ba8",
+      accent: "#a855f7", secondary: "#c084fc",
+      accentRgb: "168, 85, 247", secondaryRgb: "192, 132, 252",
+      warn: "#fbbf24", bad: "#f87171"
+    };
+  }
+  if (t === "amber") {
+    return {
+      bg: "#141008", panel: "#241d0f", border: "#382d17",
+      text: "#fef3c7", muted: "#a18653",
+      accent: "#f59e0b", secondary: "#fbbf24",
+      accentRgb: "245, 158, 11", secondaryRgb: "251, 191, 36",
+      warn: "#fbbf24", bad: "#f87171"
+    };
+  }
+  // Default: emerald
+  return {
+    bg: "#0a0a0b", panel: "#1a1a1c", border: "#2e2e32",
+    text: "#f0f0f2", muted: "#626268",
+    accent: "#4ade80", secondary: "#6ee7b7",
+    accentRgb: "74, 222, 128", secondaryRgb: "110, 231, 183",
+    warn: "#fbbf24", bad: "#f87171"
+  };
+};
+
 /* ═══════════════════════════════════════════════════════════════════════════
    CHART COMPONENTS
    ═══════════════════════════════════════════════════════════════════════════ */
-function SolutionChart({ solver, fno, ic, title }) {
+function SolutionChart({ solver, fno, ic, title, theme }) {
+  const themeColors = getThemeColors(theme);
   const pad = { t: 24, b: 24, l: 36, r: 12 };
   const ref = useCanvas((ctx, W, H) => {
-    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
-    drawAxes(ctx, W, H, pad);
-    ctx.fillStyle = PAL.muted; ctx.font = "9px 'JetBrains Mono',monospace";
+    ctx.fillStyle = themeColors.bg; ctx.fillRect(0, 0, W, H);
+    drawAxes(ctx, W, H, pad, `rgba(${themeColors.accentRgb},0.08)`);
+    ctx.fillStyle = themeColors.muted; ctx.font = "9px 'JetBrains Mono',monospace";
     ["0", "0.25", "0.5", "0.75", "1.0"].forEach((l, i) => {
       ctx.fillText(l, pad.l + (W - pad.l - pad.r) / 4 * i - 8, H - 6);
     });
     ["1.0", "0.75", "0.5", "0.25", "0"].forEach((l, i) => {
       ctx.fillText(l, 4, pad.t + (H - pad.t - pad.b) / 4 * i + 4);
     });
-    ctx.fillStyle = PAL.muted; ctx.font = "bold 10px 'JetBrains Mono',monospace";
+    ctx.fillStyle = themeColors.muted; ctx.font = "bold 10px 'JetBrains Mono',monospace";
     ctx.fillText(title, pad.l + 4, 15);
-    if (ic) drawLine(ctx, ic, W, H, pad, "rgba(74,222,128,0.2)", 1, false);
-    if (solver) drawLine(ctx, solver, W, H, pad, PAL.secondary, 2.5, false);
-    if (fno) drawLine(ctx, fno, W, H, pad, PAL.accent, 1.5, true);
-  }, [solver, fno, ic, title]);
+    if (ic) drawLine(ctx, ic, W, H, pad, `rgba(${themeColors.accentRgb},0.2)`, 1, false);
+    if (solver) drawLine(ctx, solver, W, H, pad, themeColors.secondary, 2.5, false);
+    if (fno) drawLine(ctx, fno, W, H, pad, themeColors.accent, 1.5, true);
+  }, [solver, fno, ic, title, theme]);
   return <canvas ref={ref} width={480} height={190} className="plot-canvas" />;
 }
 
-function ErrorChart({ data, title }) {
+function ErrorChart({ data, title, theme }) {
+  const themeColors = getThemeColors(theme);
   const pad = { t: 24, b: 24, l: 36, r: 12 };
   const ref = useCanvas((ctx, W, H) => {
-    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
-    drawAxes(ctx, W, H, pad);
-    ctx.fillStyle = PAL.muted; ctx.font = "bold 10px 'JetBrains Mono',monospace";
+    ctx.fillStyle = themeColors.bg; ctx.fillRect(0, 0, W, H);
+    drawAxes(ctx, W, H, pad, `rgba(${themeColors.accentRgb},0.08)`);
+    ctx.fillStyle = themeColors.muted; ctx.font = "bold 10px 'JetBrains Mono',monospace";
     ctx.fillText(title, pad.l + 4, 15);
     if (!data?.length) return;
     const max = Math.max(...data, 1e-8);
     const norm = data.map(v => v / max);
-    drawLine(ctx, norm, W, H, pad, PAL.warn, 1.5, false);
+    drawLine(ctx, norm, W, H, pad, themeColors.warn, 1.5, false);
     const pw = W - pad.l - pad.r; const ph = H - pad.t - pad.b;
     ctx.beginPath();
     norm.forEach((v, i) => {
@@ -229,15 +269,16 @@ function ErrorChart({ data, title }) {
     });
     ctx.lineTo(W - pad.r, H - pad.b); ctx.closePath();
     ctx.fillStyle = "rgba(251, 191, 36, 0.07)"; ctx.fill();
-    ctx.fillStyle = PAL.muted; ctx.font = "9px 'JetBrains Mono',monospace";
+    ctx.fillStyle = themeColors.muted; ctx.font = "9px 'JetBrains Mono',monospace";
     ctx.fillText(`max: ${max.toFixed(5)}`, W - 100, 15);
-  }, [data, title]);
+  }, [data, title, theme]);
   return <canvas ref={ref} width={480} height={190} className="plot-canvas" />;
 }
 
-function HeatmapChart({ snaps, onHover }) {
+function HeatmapChart({ snaps, onHover, theme }) {
+  const themeColors = getThemeColors(theme);
   const ref = useCanvas((ctx, W, H) => {
-    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = themeColors.bg; ctx.fillRect(0, 0, W, H);
     if (!snaps?.length) return;
     const nT = snaps.length; const nX = snaps[0].length;
     const cw = W / nX; const ch = H / nT;
@@ -253,14 +294,16 @@ function HeatmapChart({ snaps, onHover }) {
         }
       }
     }
-  }, [snaps]);
+  }, [snaps, theme]);
 
   const handleMouseMove = (e) => {
     if (!snaps?.length || !onHover) return;
-    const c = ref.current; const rect = c.getBoundingClientRect();
+    const c = ref.current; if (!c) return;
+    const rect = c.getBoundingClientRect();
     const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
-    const px = Math.min(1, Math.max(0, mx / rect.width));
-    const pt = Math.min(1, Math.max(0, my / rect.height));
+    const pw = rect.width || 1; const ph = rect.height || 1;
+    const px = Math.min(1, Math.max(0, mx / pw));
+    const pt = Math.min(1, Math.max(0, my / ph));
     const snapIdx = Math.min(snaps.length - 1, Math.max(0, Math.floor(pt * snaps.length)));
     const nodeIdx = Math.min(snaps[0].length - 1, Math.max(0, Math.floor(px * snaps[0].length)));
     onHover({ x: px, t: pt, u: snaps[snapIdx][nodeIdx] });
@@ -270,15 +313,16 @@ function HeatmapChart({ snaps, onHover }) {
     style={{ cursor: "crosshair" }} onMouseMove={handleMouseMove} />;
 }
 
-function Waterfall3DChart({ snaps }) {
+function Waterfall3DChart({ snaps, theme }) {
+  const themeColors = getThemeColors(theme);
   const ref = useCanvas((ctx, W, H) => {
-    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = themeColors.bg; ctx.fillRect(0, 0, W, H);
     if (!snaps?.length) return;
     const pad = { t: 15, b: 15, l: 15, r: 15 };
     const skip = Math.max(1, Math.floor(snaps.length / 22));
     const selected = [];
-    for (let i = 0; i < snaps.length; i += skip) selected.push({ t: i / (snaps.length - 1), data: snaps[i] });
-    if (selected[selected.length - 1].t !== 1) selected.push({ t: 1, data: snaps[snaps.length - 1] });
+    for (let i = 0; i < snaps.length; i += skip) selected.push({ t: snaps.length > 1 ? i / (snaps.length - 1) : 1, data: snaps[i] });
+    if (selected.length > 0 && selected[selected.length - 1].t !== 1) selected.push({ t: 1, data: snaps[snaps.length - 1] });
     selected.forEach(({ t, data }) => {
       const N = data.length;
       ctx.beginPath();
@@ -289,8 +333,8 @@ function Waterfall3DChart({ snaps }) {
       const ptLast = project3D(1, t, 0, W, H, pad);
       const ptFirst = project3D(0, t, 0, W, H, pad);
       ctx.lineTo(ptLast.x, ptLast.y); ctx.lineTo(ptFirst.x, ptFirst.y); ctx.closePath();
-      ctx.fillStyle = PAL.bg; ctx.fill();
-      ctx.strokeStyle = "rgba(74, 222, 128, 0.12)"; ctx.lineWidth = 0.5; ctx.stroke();
+      ctx.fillStyle = themeColors.bg; ctx.fill();
+      ctx.strokeStyle = `rgba(${themeColors.accentRgb}, 0.12)`; ctx.lineWidth = 0.5; ctx.stroke();
       ctx.beginPath();
       for (let i = 0; i < N; i++) {
         const pt = project3D(i / (N - 1), t, data[i], W, H, pad);
@@ -298,53 +342,55 @@ function Waterfall3DChart({ snaps }) {
       }
       const ptS = project3D(0, t, 0.5, W, H, pad); const ptE = project3D(1, t, 0.5, W, H, pad);
       const grad = ctx.createLinearGradient(ptS.x, ptS.y, ptE.x, ptE.y);
-      grad.addColorStop(0, "rgba(34, 197, 94, 0.25)");
-      grad.addColorStop(0.5, "rgba(74, 222, 128, 0.7)");
-      grad.addColorStop(1, "rgba(110, 231, 183, 0.35)");
+      grad.addColorStop(0, `rgba(${themeColors.accentRgb}, 0.25)`);
+      grad.addColorStop(0.5, `rgba(${themeColors.accentRgb}, 0.7)`);
+      grad.addColorStop(1, `rgba(${themeColors.secondaryRgb}, 0.35)`);
       ctx.strokeStyle = grad; ctx.lineWidth = 1.2; ctx.stroke();
     });
     const origin = project3D(0, 0, 0, W, H, { t: 15, b: 15, l: 15, r: 15 });
     const axisX = project3D(1, 0, 0, W, H, { t: 15, b: 15, l: 15, r: 15 });
     const axisT = project3D(0, 1, 0, W, H, { t: 15, b: 15, l: 15, r: 15 });
     const axisU = project3D(0, 0, 1, W, H, { t: 15, b: 15, l: 15, r: 15 });
-    ctx.strokeStyle = "rgba(74, 222, 128, 0.15)"; ctx.lineWidth = 1;
+    ctx.strokeStyle = `rgba(${themeColors.accentRgb}, 0.15)`; ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(axisX.x, axisX.y); ctx.lineTo(origin.x, origin.y); ctx.lineTo(axisT.x, axisT.y);
     ctx.moveTo(origin.x, origin.y); ctx.lineTo(axisU.x, axisU.y); ctx.stroke();
-    ctx.fillStyle = PAL.muted; ctx.font = "8px 'JetBrains Mono', monospace";
+    ctx.fillStyle = themeColors.muted; ctx.font = "8px 'JetBrains Mono', monospace";
     ctx.fillText("x", axisX.x + 4, axisX.y + 4);
     ctx.fillText("t", axisT.x - 10, axisT.y + 8);
     ctx.fillText("u", axisU.x - 10, axisU.y - 2);
-  }, [snaps]);
+  }, [snaps, theme]);
   return <canvas ref={ref} width={480} height={200} className="plot-canvas" />;
 }
 
-function MeshCanvas({ N }) {
+function MeshCanvas({ N, theme }) {
+  const themeColors = getThemeColors(theme);
   const ref = useCanvas((ctx, W, H) => {
-    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = themeColors.bg; ctx.fillRect(0, 0, W, H);
     const pad = { l: 12, r: 12 }; const pw = W - pad.l - pad.r; const cy = H / 2;
-    ctx.strokeStyle = PAL.border; ctx.lineWidth = 1;
+    ctx.strokeStyle = themeColors.border; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(pad.l, cy); ctx.lineTo(W - pad.r, cy); ctx.stroke();
-    ctx.fillStyle = N > 128 ? PAL.accent : PAL.secondary;
+    ctx.fillStyle = N > 128 ? themeColors.accent : themeColors.secondary;
     for (let i = 0; i < N; i++) {
       const x = pad.l + (i / (N - 1)) * pw;
       ctx.beginPath();
       ctx.arc(x, cy, N > 128 ? 1 : N > 64 ? 1.5 : 2, 0, 2 * Math.PI);
       ctx.fill();
     }
-    ctx.fillStyle = PAL.muted; ctx.font = "8px 'JetBrains Mono',monospace";
+    ctx.fillStyle = themeColors.muted; ctx.font = "8px 'JetBrains Mono',monospace";
     ctx.fillText("x=0", pad.l, cy - 5);
     ctx.fillText("x=1", W - pad.r - 18, cy - 5);
-  }, [N]);
+  }, [N, theme]);
   return <canvas ref={ref} width={440} height={32} className="ic-preview-canvas" />;
 }
 
-function HistChart({ data, title, color }) {
+function HistChart({ data, title, color, theme }) {
+  const themeColors = getThemeColors(theme);
   const pad = { t: 24, b: 24, l: 30, r: 12 };
   const ref = useCanvas((ctx, W, H) => {
-    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
-    drawAxes(ctx, W, H, pad);
-    ctx.fillStyle = PAL.muted; ctx.font = "bold 9px 'JetBrains Mono',monospace";
+    ctx.fillStyle = themeColors.bg; ctx.fillRect(0, 0, W, H);
+    drawAxes(ctx, W, H, pad, `rgba(${themeColors.accentRgb},0.08)`);
+    ctx.fillStyle = themeColors.muted; ctx.font = "bold 9px 'JetBrains Mono',monospace";
     ctx.fillText(title, pad.l + 4, 15);
     if (!data?.length) return;
     const maxVal = Math.max(...data, 1);
@@ -353,27 +399,28 @@ function HistChart({ data, title, color }) {
     data.forEach((val, i) => {
       const x = pad.l + pw * (i / data.length) + (pw / data.length) * 0.125;
       const bh = (val / maxVal) * ph;
-      ctx.fillStyle = color || PAL.accent;
+      ctx.fillStyle = color || themeColors.accent;
       ctx.beginPath(); ctx.roundRect(x, pad.t + ph - bh, bw, bh, 2); ctx.fill();
       if (val > 0) {
-        ctx.fillStyle = PAL.text; ctx.font = "7px monospace";
+        ctx.fillStyle = themeColors.text; ctx.font = "7px monospace";
         ctx.fillText(val, x + bw / 2 - 3, pad.t + ph - bh - 2);
       }
     });
-  }, [data, title, color]);
+  }, [data, title, color, theme]);
   return <canvas ref={ref} width={220} height={110} className="plot-canvas" style={{ width: "100%" }} />;
 }
 
-function ICPreviewCanvas({ mu, sig }) {
+function ICPreviewCanvas({ mu, sig, theme }) {
+  const themeColors = getThemeColors(theme);
   const data = Array.from({ length: 128 }, (_, i) => {
     const x = i / 127;
     return Math.min(1, Math.max(0, Math.exp(-0.5 * ((x - mu) / sig) ** 2)));
   });
   const ref = useCanvas((ctx, W, H) => {
-    ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = themeColors.bg; ctx.fillRect(0, 0, W, H);
     const pad = { t: 2, b: 2, l: 8, r: 8 };
-    drawLine(ctx, data, W, H, pad, PAL.accent, 1.5, true);
-  }, [mu, sig]);
+    drawLine(ctx, data, W, H, pad, themeColors.accent, 1.5, true);
+  }, [mu, sig, theme]);
   return <canvas ref={ref} width={440} height={32} className="ic-preview-canvas" />;
 }
 
@@ -611,7 +658,7 @@ function GlobalNav({ activePage, setActivePage, systemUptime, theme, setTheme })
 /* ═══════════════════════════════════════════════════════════════════════════
    LANDING PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
-function LandingPage({ setActivePage, mu, sig }) {
+function LandingPage({ setActivePage, mu, sig, theme }) {
   useScrollReveal();
 
   const features = [
@@ -678,7 +725,7 @@ function LandingPage({ setActivePage, mu, sig }) {
               ))}
             </div>
             <div className="preview-canvas-col">
-              <ICPreviewCanvas mu={mu} sig={sig} />
+              <ICPreviewCanvas mu={mu} sig={sig} theme={theme} />
             </div>
           </div>
         </div>
@@ -743,7 +790,7 @@ function LandingPage({ setActivePage, mu, sig }) {
             <div className="eq-formula">
               <Tex>{"\\frac{\\partial u}{\\partial t} = D\\frac{\\partial^2 u}{\\partial x^2} + r\\,(u - u^3)"}</Tex>
             </div>
-            <div className="eq-desc">Double-well potential drives sharp phase boundaries. Models spinodal decomposition and grain coarsening in materials science.</div>
+            <div className="eq-desc">Double-well potential drives sharp phase boundaries at wave speed <Tex>{"c = 1.35\\sqrt{Dr}"}</Tex>. Models spinodal decomposition and grain coarsening in materials science.</div>
           </div>
         </div>
       </section>
@@ -782,7 +829,7 @@ function SimulatorPage({
   expRows, expName, expErr, expWarn, researchNotes, setResearchNotes,
   convResults, runningConv, executeSimulation, executeMonteCarlo, executeMeshSensitivity,
   handleCSVUpload, exportConfigJSON, exportReport, resetAll, getFittingMAE,
-  waveSpeed, cflNumber
+  waveSpeed, cflNumber, theme
 }) {
   const [activeTab, setActiveTab] = useState("results");
 
@@ -1079,18 +1126,18 @@ function SimulatorPage({
                         <div className="plot-card-header">
                           <div className="plot-card-title">Solution at t={activeT}</div>
                           <div className="plot-legend">
-                            <div className="legend-item"><div className="legend-line" style={{ background: "rgba(74,222,128,0.3)"}}/> IC</div>
-                            <div className="legend-item"><div className="legend-line" style={{ background: "#6ee7b7"}}/> Solver</div>
-                            <div className="legend-item"><div className="legend-line" style={{ background: "#4ade80"}}/> FNO</div>
+                            <div className="legend-item"><div className="legend-line" style={{ background: "var(--accent-glow)"}}/> IC</div>
+                            <div className="legend-item"><div className="legend-line" style={{ background: "var(--secondary)"}}/> Solver</div>
+                            <div className="legend-item"><div className="legend-line" style={{ background: "var(--accent)"}}/> FNO</div>
                           </div>
                         </div>
-                        <SolutionChart solver={activeSolSnap} fno={activeFnoSnap} ic={icData} title={`u(x,t=${activeT})`} />
+                        <SolutionChart solver={activeSolSnap} fno={activeFnoSnap} ic={icData} title={`u(x,t=${activeT})`} theme={theme} />
                       </div>
                       <div className="plot-card">
                         <div className="plot-card-header">
                           <div className="plot-card-title warn">Pointwise Error |u_FNO − u_solver|</div>
                         </div>
-                        <ErrorChart data={errField} title="Error field" />
+                        <ErrorChart data={errField} title="Error field" theme={theme} />
                         <div className="chart-desc">
                           <strong>Pointwise Absolute Error:</strong> Measures the spatial deviation between the fast Fourier Neural Operator prediction and the classical Crank-Nicolson numerical solver at the current time-step. Highlights local high-frequency residual errors.
                         </div>
@@ -1102,11 +1149,11 @@ function SimulatorPage({
                         <div className="plot-card-header">
                           <div className="plot-card-title">Final Profile (t=1)</div>
                           <div className="plot-legend">
-                            <div className="legend-item"><div className="legend-line" style={{ background: "#6ee7b7"}}/> Solver</div>
-                            <div className="legend-item"><div className="legend-line" style={{ background: "#4ade80"}}/> FNO</div>
+                            <div className="legend-item"><div className="legend-line" style={{ background: "var(--secondary)"}}/> Solver</div>
+                            <div className="legend-item"><div className="legend-line" style={{ background: "var(--accent)"}}/> FNO</div>
                           </div>
                         </div>
-                        <SolutionChart solver={solFinal} fno={fnoFinal} ic={icData} title="u(x,T=1)" />
+                        <SolutionChart solver={solFinal} fno={fnoFinal} ic={icData} title="u(x,T=1)" theme={theme} />
                         <div className="chart-desc">
                           <strong>Final Concentration Profile u(x, T=1):</strong> Validates the surrogate model's capacity to accurately resolve macroscopic traveling wavefronts and steep phase boundaries over the entire integration period in a single forward pass.
                         </div>
@@ -1122,7 +1169,7 @@ function SimulatorPage({
                             </div>
                           )}
                         </div>
-                        <HeatmapChart snaps={snaps} onHover={setHudCoord} />
+                        <HeatmapChart snaps={snaps} onHover={setHudCoord} theme={theme} />
                         <div className="chart-desc">
                           <strong>Space-Time Heatmap:</strong> Rows represent time advancing downwards; columns represent the spatial domain. Hover to dynamically probe localized traveling wave concentration states via the precision Crosshair HUD.
                         </div>
@@ -1157,7 +1204,7 @@ function SimulatorPage({
                       )}
                     </div>
                     <div className="plot-card" style={{ maxWidth: "100%" }}>
-                      <HeatmapChart snaps={snaps} onHover={setHudCoord} />
+                      <HeatmapChart snaps={snaps} onHover={setHudCoord} theme={theme} />
                     </div>
                   </>
                 )}
@@ -1177,7 +1224,7 @@ function SimulatorPage({
                     <div className="plot-card-header">
                       <div className="plot-card-title">3D Waterfall — u(x,t)</div>
                     </div>
-                    <Waterfall3DChart snaps={snaps} />
+                    <Waterfall3DChart snaps={snaps} theme={theme} />
                     <div style={{ padding: 12, fontSize: 11, color: "var(--muted)", fontFamily: "var(--font-mono)", borderTop: "1px solid var(--border)", marginTop: 8, lineHeight: 1.4 }}>
                       <strong style={{ color: "var(--text)" }}>Volume Visualization:</strong> A pseudo-3D orthographic projection of the solution manifold. This perspective highlights the topological steepness of the traveling wave front (for Fisher-KPP) or the phase-separation boundary (for Allen-Cahn) over the entire integration period.
                     </div>
@@ -1203,11 +1250,11 @@ function SimulatorPage({
                   <div className="hist-grid">
                     <div className="plot-card">
                       <div className="plot-card-title" style={{ marginBottom: 8 }}>L2 Error Distribution</div>
-                      <HistChart data={l2Hist} title="Rel L2 Error bins" color="#4ade80" />
+                      <HistChart data={l2Hist} title="Rel L2 Error bins" theme={theme} />
                     </div>
                     <div className="plot-card">
                       <div className="plot-card-title" style={{ marginBottom: 8 }}>Speedup Distribution</div>
-                      <HistChart data={speedupHist} title="Speedup bins" color="#6ee7b7" />
+                      <HistChart data={speedupHist} title="Speedup bins" color={getThemeColors(theme).secondary} theme={theme} />
                     </div>
                   </div>
                 )}
@@ -1701,7 +1748,7 @@ export default function App() {
 
       <div className="page-container">
         <div className={`page-slide ${activePage === "landing" ? "active" : "inactive"}`}>
-          <LandingPage setActivePage={setActivePage} mu={mu} sig={sig} />
+          <LandingPage setActivePage={setActivePage} mu={mu} sig={sig} theme={theme} />
         </div>
 
         <div className={`page-slide ${activePage === "simulator" ? "active" : "inactive"}`}>
@@ -1731,6 +1778,7 @@ export default function App() {
             getFittingMAE={getFittingMAE}
             waveSpeed={waveSpeed}
             cflNumber={cflNumber}
+            theme={theme}
           />
         </div>
 
