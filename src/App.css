@@ -1535,3 +1535,156 @@ body {
   .plots-grid    { grid-template-columns: 1fr; }
   .tech-grid     { grid-template-columns: 1fr 1fr; }
 }
+
+/* ==========================================================================
+   FNO SCIENTIFIC PLATFORM — PREMIUM UPGRADES (ANIMATIONS & SMOOTH TRANSITIONS)
+   ========================================================================== */
+
+/* Page Container & Smooth Sliding transitions */
+.page-container {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: calc(100vh - 60px);
+}
+
+.page-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(16px) scale(0.995);
+  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  z-index: 1;
+  background: var(--bg);
+  height: 100%;
+  width: 100%;
+}
+
+.page-slide.active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  z-index: 10;
+}
+
+/* Tab Panels smooth transition */
+.sim-tab-panel {
+  display: none;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sim-tab-panel.active {
+  display: block;
+  animation: tabFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Active navigation/tab border enhancements */
+.nav-link-btn {
+  transition: color 0.25s var(--ease-out), background-color 0.25s var(--ease-out);
+}
+.nav-link-btn:hover {
+  background: rgba(74, 222, 128, 0.08);
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.04);
+}
+
+.sim-tab-btn {
+  transition: color 0.2s var(--ease-out), background-color 0.2s var(--ease-out), border-color 0.2s var(--ease-out);
+  border-bottom: 2px solid transparent;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+}
+.sim-tab-btn:hover {
+  background: rgba(74, 222, 128, 0.04);
+  color: var(--text-2);
+}
+.sim-tab-btn.active {
+  background: rgba(74, 222, 128, 0.06);
+  border-bottom: 2px solid var(--accent);
+  color: var(--accent);
+}
+
+/* Slider / param inputs hover glows */
+.param-row {
+  transition: transform 0.2s var(--ease-spring);
+}
+.param-row:hover {
+  transform: translateX(4px);
+}
+.param-row:hover .param-slider-wrap {
+  background: var(--border-light);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.05);
+}
+.param-row:hover .param-slider-fill {
+  background: linear-gradient(90deg, var(--accent), var(--secondary));
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.35);
+}
+.param-row:hover .param-val {
+  color: var(--secondary);
+  text-shadow: 0 0 8px rgba(110, 231, 183, 0.5);
+}
+.param-num-input {
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+.param-num-input:hover {
+  border-color: var(--border-light);
+  background-color: var(--surface-hover);
+}
+
+/* Glassmorphism enhancements */
+.global-nav {
+  background: rgba(10, 10, 11, 0.8) !important;
+  backdrop-filter: blur(16px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(140%) !important;
+  border-bottom: 1px solid rgba(74, 222, 128, 0.15) !important;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.45);
+}
+
+.sim-sidebar {
+  background: rgba(26, 26, 28, 0.65) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border-right: 1px solid rgba(74, 222, 128, 0.08) !important;
+}
+
+.plot-card {
+  background: rgba(26, 26, 28, 0.5) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(74, 222, 128, 0.08) !important;
+  transition: border-color 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out), transform 0.3s var(--ease-out);
+}
+.plot-card:hover {
+  border-color: rgba(74, 222, 128, 0.25) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3), var(--glow-sm);
+  transform: translateY(-2px);
+}
+
+/* Animated moving grid background */
+@keyframes panGrid {
+  from { background-position: 0 0; }
+  to { background-position: 52px 52px; }
+}
+.hero-bg-grid {
+  animation: fadeIn 1.2s var(--ease-out), panGrid 20s linear infinite !important;
+}
+
+/* Smooth loading spinner overlay during computation */
+.running-overlay {
+  background: rgba(10, 10, 11, 0.85) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border-radius: var(--r-lg);
+  animation: fadeIn 0.3s var(--ease-out);
+}

@@ -797,6 +797,9 @@ function SimulatorPage({
     { id: "fast", label: "Combustion Front", D: 0.4, r: 4.5, mu: 0.2, sig: 0.08, model: "fisher" },
     { id: "allen", label: "Phase Separation", D: 0.08, r: 1.5, mu: 0.35, sig: 0.12, model: "allen" },
     { id: "sharp", label: "Sharp Shock", D: 0.12, r: 3.2, mu: 0.5, sig: 0.04, model: "fisher" },
+    { id: "droplet", label: "Localized Droplet (AC)", D: 0.03, r: 1.2, mu: 0.5, sig: 0.08, model: "allen" },
+    { id: "slow", label: "Ecology Diffusion", D: 0.02, r: 0.6, mu: 0.1, sig: 0.15, model: "fisher" },
+    { id: "custom_k", label: "Custom Double-Well", D: 0.05, r: 2.5, mu: 0.3, sig: 0.10, model: "allen" },
   ];
 
   const applyPreset = (id) => {
@@ -1005,7 +1008,7 @@ function SimulatorPage({
           <div className="sim-tab-content">
 
             {/* ── Results Tab ── */}
-            {activeTab === "results" && (
+            <div className={`sim-tab-panel ${activeTab === "results" ? "active" : ""}`}>
               <>
                 {!simDone && !running && (
                   <div className="idle-placeholder">
@@ -1122,10 +1125,10 @@ function SimulatorPage({
                   </>
                 )}
               </>
-            )}
+            </div>
 
             {/* ── Heatmap Tab ── */}
-            {activeTab === "heatmap" && (
+            <div className={`sim-tab-panel ${activeTab === "heatmap" ? "active" : ""}`}>
               <>
                 {!simDone ? (
                   <div className="idle-placeholder">
@@ -1153,10 +1156,10 @@ function SimulatorPage({
                   </>
                 )}
               </>
-            )}
+            </div>
 
             {/* ── 3D Waterfall Tab ── */}
-            {activeTab === "waterfall" && (
+            <div className={`sim-tab-panel ${activeTab === "waterfall" ? "active" : ""}`}>
               <>
                 {!simDone ? (
                   <div className="idle-placeholder">
@@ -1175,10 +1178,10 @@ function SimulatorPage({
                   </div>
                 )}
               </>
-            )}
+            </div>
 
             {/* ── MC Sweep Tab ── */}
-            {activeTab === "sweep" && (
+            <div className={`sim-tab-panel ${activeTab === "sweep" ? "active" : ""}`}>
               <>
                 <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "center" }}>
                   <button className="btn btn-run" onClick={executeMonteCarlo} disabled={sweeping}>
@@ -1210,10 +1213,10 @@ function SimulatorPage({
                   </div>
                 )}
               </>
-            )}
+            </div>
 
             {/* ── Grid Convergence Tab ── */}
-            {activeTab === "grid" && (
+            <div className={`sim-tab-panel ${activeTab === "grid" ? "active" : ""}`}>
               <>
                 <div style={{ marginBottom: 14 }}>
                   <button className="btn btn-run" onClick={executeMeshSensitivity} disabled={runningConv}>
@@ -1253,10 +1256,10 @@ function SimulatorPage({
                   </div>
                 )}
               </>
-            )}
+            </div>
 
             {/* ── Upload Data Tab ── */}
-            {activeTab === "upload" && (
+            <div className={`sim-tab-panel ${activeTab === "upload" ? "active" : ""}`}>
               <>
                 <label className="upload-zone">
                   <div className="upload-zone-icon"><IcUpload s={32} /></div>
@@ -1298,10 +1301,10 @@ function SimulatorPage({
                     placeholder="Enter observations, hypotheses, or notes about this simulation…" />
                 </div>
               </>
-            )}
+            </div>
 
             {/* ── Python Code Tab ── */}
-            {activeTab === "code" && (
+            <div className={`sim-tab-panel ${activeTab === "code" ? "active" : ""}`}>
               <div className="plot-card">
                 <div className="plot-card-title" style={{ marginBottom: 12 }}>
                   <IcCode s={13} style={{ display: "inline", marginRight: 6, verticalAlign: "middle" }} />
@@ -1322,7 +1325,7 @@ function SimulatorPage({
                   })}
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
@@ -1685,43 +1688,45 @@ export default function App() {
     <div className="app">
       <GlobalNav activePage={activePage} setActivePage={setActivePage} systemUptime={systemUptime} />
 
-      {activePage === "landing" && (
-        <LandingPage setActivePage={setActivePage} mu={mu} sig={sig} />
-      )}
+      <div className="page-container">
+        <div className={`page-slide ${activePage === "landing" ? "active" : "inactive"}`}>
+          <LandingPage setActivePage={setActivePage} mu={mu} sig={sig} />
+        </div>
 
-      {activePage === "simulator" && (
-        <SimulatorPage
-          D={D} setD={setD} r={r} setR={setR} mu={mu} setMu={setMu}
-          sig={sig} setSig={setSig} N={N} setN={setN} dt={dt} setDt={setDt}
-          modelType={modelType} setModelType={setModelType} customEq={customEq} setCustomEq={setCustomEq} customEq={customEq} setCustomEq={setCustomEq}
-          snaps={snaps} solFinal={solFinal} fnoFinal={fnoFinal} errField={errField}
-          solMs={solMs} fnoMs={fnoMs} speedup={speedup} l2={l2}
-          simDone={simDone} running={running}
-          tIndex={tIndex} setTIndex={setTIndex}
-          animating={animating} setAnimating={setAnimating}
-          animSpeed={animSpeed} setAnimSpeed={setAnimSpeed}
-          hudCoord={hudCoord} setHudCoord={setHudCoord}
-          sweeping={sweeping} sweepDone={sweepDone} sweepStats={sweepStats}
-          l2Hist={l2Hist} speedupHist={speedupHist}
-          expRows={expRows} expName={expName} expErr={expErr} expWarn={expWarn}
-          researchNotes={researchNotes} setResearchNotes={setResearchNotes}
-          convResults={convResults} runningConv={runningConv}
-          executeSimulation={executeSimulation}
-          executeMonteCarlo={executeMonteCarlo}
-          executeMeshSensitivity={executeMeshSensitivity}
-          handleCSVUpload={handleCSVUpload}
-          exportConfigJSON={exportConfigJSON}
-          exportReport={exportReport}
-          resetAll={resetAll}
-          getFittingMAE={getFittingMAE}
-          waveSpeed={waveSpeed}
-          cflNumber={cflNumber}
-        />
-      )}
+        <div className={`page-slide ${activePage === "simulator" ? "active" : "inactive"}`}>
+          <SimulatorPage
+            D={D} setD={setD} r={r} setR={setR} mu={mu} setMu={setMu}
+            sig={sig} setSig={setSig} N={N} setN={setN} dt={dt} setDt={setDt}
+            modelType={modelType} setModelType={setModelType} customEq={customEq} setCustomEq={setCustomEq}
+            snaps={snaps} solFinal={solFinal} fnoFinal={fnoFinal} errField={errField}
+            solMs={solMs} fnoMs={fnoMs} speedup={speedup} l2={l2}
+            simDone={simDone} running={running}
+            tIndex={tIndex} setTIndex={setTIndex}
+            animating={animating} setAnimating={setAnimating}
+            animSpeed={animSpeed} setAnimSpeed={setAnimSpeed}
+            hudCoord={hudCoord} setHudCoord={setHudCoord}
+            sweeping={sweeping} sweepDone={sweepDone} sweepStats={sweepStats}
+            l2Hist={l2Hist} speedupHist={speedupHist}
+            expRows={expRows} expName={expName} expErr={expErr} expWarn={expWarn}
+            researchNotes={researchNotes} setResearchNotes={setResearchNotes}
+            convResults={convResults} runningConv={runningConv}
+            executeSimulation={executeSimulation}
+            executeMonteCarlo={executeMonteCarlo}
+            executeMeshSensitivity={executeMeshSensitivity}
+            handleCSVUpload={handleCSVUpload}
+            exportConfigJSON={exportConfigJSON}
+            exportReport={exportReport}
+            resetAll={resetAll}
+            getFittingMAE={getFittingMAE}
+            waveSpeed={waveSpeed}
+            cflNumber={cflNumber}
+          />
+        </div>
 
-      {activePage === "research" && (
-        <ResearchPage setActivePage={setActivePage} />
-      )}
+        <div className={`page-slide ${activePage === "research" ? "active" : "inactive"}`}>
+          <ResearchPage setActivePage={setActivePage} />
+        </div>
+      </div>
     </div>
   );
 }
