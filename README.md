@@ -285,8 +285,8 @@ The platform includes several user experience enhancements designed to make data
 
 ```bash
 # Clone the repository
-git clone https://github.com/shekharsameer2308/fno-scientific-workstation.git
-cd fno-scientific-workstation
+git clone https://github.com/shekharsameer2308/Prototype-FNO-1D-RxnDynamics-.git
+cd Prototype-FNO-1D-RxnDynamics-
 
 # Install dependencies
 npm install
