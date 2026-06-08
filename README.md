@@ -91,6 +91,20 @@ This system represents a tridiagonal matrix solved in linear time $\mathcal{O}(N
 | **Width ($\sigma$)** | Initial Gaussian spread | $0.01 - 0.40$ | Establishes the steepness of the initial concentration gradient. |
 | **Grid Points ($N$)**| Spatial mesh resolution | $32 - 256$ | Controls finite-difference accuracy and computational grid size. |
 
+### Workstation Scenario Presets
+
+To facilitate rapid benchmarking, the workstation includes several pre-configured physics scenarios:
+
+| Preset Scenario | Model Type | Diffusion ($D$) | Reaction ($r$) | Initial Position ($\mu$) | Initial Width ($\sigma$) | Physical Regime |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Baseline Fisher** | Fisher-KPP | $0.10$ | $2.00$ | $0.30$ | $0.10$ | Reference combustion/population wave |
+| **Combustion Front** | Fisher-KPP | $0.40$ | $4.50$ | $0.20$ | $0.08$ | High-speed propagation wavefront |
+| **Phase Separation** | Allen-Cahn | $0.08$ | $1.50$ | $0.35$ | $0.12$ | Interface concentration growth |
+| **Sharp Shock** | Fisher-KPP | $0.12$ | $3.20$ | $0.50$ | $0.04$ | Extremely narrow wave initialization |
+| **Localized Droplet** | Allen-Cahn | $0.03$ | $1.20$ | $0.50$ | $0.08$ | Narrow droplet interfacial separation |
+| **Ecology Diffusion** | Fisher-KPP | $0.02$ | $0.60$ | $0.10$ | $0.15$ | Slow species migration pattern |
+| **Custom Double-Well** | Allen-Cahn | $0.05$ | $2.50$ | $0.30$ | $0.10$ | Classical Ginzburg-Landau energy flow |
+
 ---
 
 ## Machine Learning Architecture
@@ -243,6 +257,21 @@ graph TD
 | **Visualization** | HTML5 Canvas | Native | Zero-dependency high-performance charts (Space-Time Heatmap, 3D Waterfall, Error Plots) |
 | **Numerical Math** | JavaScript Typed Arrays | ES6 | Double-precision (`Float64Array`) numeric vectors for Crank-Nicolson stability |
 | **Packaging & Build** | Create React App | `5.0.1` | Webpack bundling, Babel transpilation, and asset optimization |
+
+---
+
+## Premium Visual Customizations & Upgrades
+
+The platform includes several user experience enhancements designed to make data analysis fluid and responsive:
+
+*   **Continuous Panning Grid**: The landing page features an animated grid background that moves continuously to create a dynamic, modern dashboard aesthetic.
+*   **Hardware-Accelerated Page Shifts**: Switching between Home, Simulator, and Research sheets uses CSS GPU translations (`translate3d`) and opacity curves.
+*   **Zero-Lag Tab Caching**: Inactive simulator panels use CSS hidden states rather than unmounting. This keeps the active HTML5 canvas drawings fully rendered in the DOM, eliminating redraw lag when switching views.
+*   **Multi-Theme Architecture**: An in-app theme switcher allows selecting between four custom, science-inspired color schemes:
+    *   `Emerald Green` (Default) — High-energy bio-computing aesthetic.
+    *   `Cyber Teal` — Deep cybernetic ocean laboratory feel.
+    *   `Electric Violet` — Premium quantum dynamics visual profile.
+    *   `Amber Gold` — Industrial solar energy & combustion wavefront theme.
 
 ---
 
