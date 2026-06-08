@@ -551,7 +551,7 @@ function AnimCounter({ target, suffix = "", duration = 1400 }) {
 /* ═══════════════════════════════════════════════════════════════════════════
    GLOBAL NAV
    ═══════════════════════════════════════════════════════════════════════════ */
-function GlobalNav({ activePage, setActivePage, systemUptime }) {
+function GlobalNav({ activePage, setActivePage, systemUptime, theme, setTheme }) {
   const fmt = (s) => {
     const h = Math.floor(s / 3600).toString().padStart(2, "0");
     const m = Math.floor((s % 3600) / 60).toString().padStart(2, "0");
@@ -590,6 +590,12 @@ function GlobalNav({ activePage, setActivePage, systemUptime }) {
       </div>
 
       <div className="nav-right">
+        <select value={theme} onChange={e => setTheme(e.target.value)} className="theme-select" title="Switch Theme">
+          <option value="emerald">🟢 Emerald</option>
+          <option value="teal">🔵 Cyber Teal</option>
+          <option value="violet">🟣 Electric Violet</option>
+          <option value="amber">🟡 Amber Gold</option>
+        </select>
         <div className="nav-status">
           <div className="nav-live-dot" />
           <span>{fmt(systemUptime)}</span>
@@ -1475,6 +1481,11 @@ function ResearchPage({ setActivePage }) {
 export default function App() {
   const [activePage, setActivePage] = useState("landing");
   const [systemUptime, setSystemUptime] = useState(0);
+  const [theme, setTheme] = useState("emerald");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   const [D, setD]     = useState(0.1);
   const [r, setR]     = useState(2.0);
@@ -1686,7 +1697,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <GlobalNav activePage={activePage} setActivePage={setActivePage} systemUptime={systemUptime} />
+      <GlobalNav activePage={activePage} setActivePage={setActivePage} systemUptime={systemUptime} theme={theme} setTheme={setTheme} />
 
       <div className="page-container">
         <div className={`page-slide ${activePage === "landing" ? "active" : "inactive"}`}>
